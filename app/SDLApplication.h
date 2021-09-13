@@ -11,7 +11,6 @@ public:
   virtual void willTerminateApplication() = 0;
 };
 
-typedef int (*BlockPF)(void *context, void *user_data);
 
 class SDLApplication {
 public:
@@ -21,6 +20,7 @@ public:
 private:
   int  argc;
   char **argv;
-
-  std::list<std::tuple<BlockPF, void *, void *>> blocks;
 };
+
+
+void SDL_DispatchRunnable(lms::Runnable *runnable);

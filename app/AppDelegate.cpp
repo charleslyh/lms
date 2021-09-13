@@ -3,10 +3,12 @@
 #include "SDLApplication.h"
 
 
-class PlayerAppDelegate: public SDLAppDelegate {
+class PlayerAppDelegate: public SDLAppDelegate, public lms::DispatchQueue {
 public:
   void didFinishLaunchingApplication(int argc, char **argv) override {
-    lms::init();
+    lms::init({
+      this
+    });
 
     lms::VideoFile *src = lms::autoRelease(new lms::VideoFile("path/to/file"));
     player = new lms::Player(src);
@@ -18,6 +20,11 @@ public:
     lms::release(player);
 
     lms::unInit();
+  }
+
+public:
+  void async(lms::Runnable *runnable) override {
+    SDL_DispatchRunnable(runnable);
   }
 
 private:

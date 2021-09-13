@@ -36,7 +36,30 @@ T autoRelease(T object) {
 
 void drainAutoReleasePool();
 
-void init();
+
+class Runnable : public Object {
+public:
+  virtual void run() = 0;
+};
+
+
+class DispatchQueue : public Object {
+public:
+  virtual void async(Runnable *runnable) = 0;
+};
+
+
+typedef struct {
+  DispatchQueue *dispatchQueue;
+} InitParams;
+
+void init(InitParams params);
 void unInit();
+
+
+typedef void (*ActionBlock)(void *context, void *data1, void *data2);
+
+void dispatchAsync(Runnable *runnable);
+void dispatchAsync(ActionBlock block, void *context, void *data1 = nullptr, void *data2 = nullptr);
 
 }
