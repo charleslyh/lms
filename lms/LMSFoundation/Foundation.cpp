@@ -9,14 +9,16 @@ Object::Object() {
   refCount = 1;
 }
 
-Object::~Object() {  
-}
+
+Object::~Object() = default;
+
 
 void Object::retain() {
   refCount += 1;
 
   printf("Object::retain(%p)\n", this);
 }
+
 
 void Object::release() {
   printf("Object::release(%p)\n", this);
@@ -29,9 +31,6 @@ void Object::release() {
 }
 
 
-static std::list<Object *> _auto_release_pool;
-
-
 void retain(Object *object) {
   object->retain();
 }
@@ -42,25 +41,43 @@ void release(Object *object) {
 }
 
 
+class Core {
+public:
+  std::list<Object *> auto_release_pool;
+};
+
+static Core *core = nullptr;
+
+
 void performAutoRelease(Object *object) {
-  _auto_release_pool.push_back(object);
+  core->auto_release_pool.push_back(object);
 }
 
 
-void flushAutoReleasePool() {
-  if (_auto_release_pool.size() == 0) {
+void drainAutoReleasePool() {
+  if (core->auto_release_pool.empty()) {
     return;
   }
 
-  printf("> flushAutoReleasePool(): %lu\n", _auto_release_pool.size());
+  printf("> drainAutoReleasePool(): %lu\n", core->auto_release_pool.size());
 
-  std::for_each(begin(_auto_release_pool), end(_auto_release_pool), [] (Object *obj) {
+  std::for_each(begin(core->auto_release_pool), end(core->auto_release_pool), [] (Object *obj) {
     obj->release();
   });
 
-  _auto_release_pool.clear();
+  core->auto_release_pool.clear();
 
-  printf("< flushAutoReleasePool()\n");
+  printf("< drainAutoReleasePool()\n");
+}
+
+
+void init() {
+  core = new Core;
+}
+
+
+void unInit() {
+  delete core;
 }
 
 }

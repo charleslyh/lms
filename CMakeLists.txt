@@ -23,3 +23,4 @@ find_package(FFMPEG REQUIRED)
 find_package(SDL2 REQUIRED)
 
 add_subdirectory(lms)
+add_subdirectory(app)

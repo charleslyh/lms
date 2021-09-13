@@ -1,8 +1,7 @@
-// C++ Headers
 #include <list>
 #include <memory>
 #include <algorithm>
-#include "App/SDLApplication.h"
+#include "SDLApplication.h"
 
 
 SDLApplication::SDLApplication(int argc, char **argv) {
@@ -17,27 +16,13 @@ SDLApplication::SDLApplication(int argc, char **argv) {
 
 
 void SDLApplication::run(SDLAppDelegate *delegate) {
-  Uint32 myEventType;
-
-  myEventType = SDL_RegisterEvents(1);
-  if (myEventType != ((Uint32)-1)) {
-      printf("myEventType: %u\n", myEventType);
-      SDL_Event event;
-      SDL_memset(&event, 0, sizeof(event)); /* or SDL_zero(event) */
-      event.type = myEventType;
-      event.user.code  = 0;
-      event.user.data1 = 0;
-      event.user.data2 = 0;
-      SDL_PushEvent(&event);
-  }
-
   // 创建一个SDL窗口用于在其中进行视频渲染
-  win = SDL_CreateWindow("LMS Window",
-                         SDL_WINDOWPOS_CENTERED,
-                         SDL_WINDOWPOS_CENTERED,
-                         1920 / 2,
-                         1080 / 2,
-                         SDL_WINDOW_METAL | SDL_WINDOW_ALLOW_HIGHDPI);
+  SDL_CreateWindow("LMS Window",
+                   SDL_WINDOWPOS_CENTERED,
+                   SDL_WINDOWPOS_CENTERED,
+                   1920 / 2,
+                   1080 / 2,
+                   SDL_WINDOW_METAL | SDL_WINDOW_ALLOW_HIGHDPI);
 
   delegate->didFinishLaunchingApplication(argc, argv);
 
@@ -54,7 +39,7 @@ void SDLApplication::run(SDLAppDelegate *delegate) {
       act(std::get<1>(item), std::get<2>(item));
     });
 
-    lms::flushAutoReleasePool();
+    lms::drainAutoReleasePool();
   }
 
   delegate->willTerminateApplication();

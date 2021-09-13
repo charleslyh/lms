@@ -22,7 +22,5 @@ private:
   int  argc;
   char **argv;
 
-  SDL_Window *win;
-
   std::list<std::tuple<BlockPF, void *, void *>> blocks;
 };

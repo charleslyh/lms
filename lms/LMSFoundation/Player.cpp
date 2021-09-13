@@ -16,6 +16,7 @@ Player::~Player() {
 void Player::play() {
   printf("Player::play()\n");
 }
+
 void Player::stop() {
   printf("Player::stop()\n");    
 }

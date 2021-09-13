@@ -34,6 +34,9 @@ T autoRelease(T object) {
   return (T) object;
 }
 
-void flushAutoReleasePool();
+void drainAutoReleasePool();
+
+void init();
+void unInit();
 
 }

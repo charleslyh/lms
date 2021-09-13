@@ -6,6 +6,7 @@ target_include_directories(player
   PRIVATE
     ${FFMPEG_INCLUDE_DIRS}
     ${SDL2_INCLUDE_DIR}
+    ../lms
 )
 
 target_link_libraries(player
