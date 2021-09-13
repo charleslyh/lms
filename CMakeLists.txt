@@ -1,13 +1,13 @@
 cmake_minimum_required(VERSION 3.11)
 
-set(CMAKE_VERBOSE_MAKEFILE ON)
+# set(CMAKE_VERBOSE_MAKEFILE ON)
 
 # 强制使用 c++11
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-project(LMS LANGUAGES CXX)
+project(lms LANGUAGES CXX)
 
 ##
 # Include module pkg-config for CMake.
