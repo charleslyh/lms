@@ -6,16 +6,41 @@ extern "C" {
 
 #include <cstdio>
 #include <string>
+#include <list>
 
 namespace lms {
 
-class StreamSource {
+class PacketAcceptor {
+public:
+  virtual void onReceivePacket(void *packet) = 0;
+};
+
+class PassivePacketSource : public Object {
 public:
   virtual void open() = 0;
   virtual void close() = 0;
+  virtual void loadPackets(int numberRequested) = 0;
+
+  void addAcceptor(PacketAcceptor *acceptor) {
+    acceptors.push_back(acceptor);
+  }
+
+  void removeAcceptor(PacketAcceptor *acceptor) {
+    acceptors.remove(acceptor);    
+  }
+
+protected:
+  void deliverPacket(void *packet) {
+    std::for_each(begin(acceptors), end(acceptors), [packet] (PacketAcceptor *acceptor) {
+      acceptor->onReceivePacket(packet);
+    });
+  }
+
+private:
+  std::list<PacketAcceptor *> acceptors;
 };
 
-class VideoFile: public Object, public StreamSource {
+class VideoFile : public PassivePacketSource {
 public:
   VideoFile(const char *path) {
     printf("VideoFile::VideoFile(\"%s\"): %p\n", path, this);
@@ -50,22 +75,34 @@ public:
     avformat_close_input(&context);
   }
 
+  void loadPackets(int numberRequested) override {
+    dispatchAsync([this] () {
+      int status = av_read_frame(context, &sharedPacket);
+    
+      if (status >= 0) {
+        deliverPacket(&sharedPacket);
+        av_packet_unref(&sharedPacket);
+      }
+    });    
+  }
+
 private:
   AVFormatContext *context;
+  AVPacket sharedPacket;
   char *path;
 };
 
 
 class Player: public Object {
 public:
-  Player(VideoFile *src);
+  Player(PassivePacketSource *src);
   ~Player();
 
   void play();
   void stop();
 
 private:
-  VideoFile *src;
+  PassivePacketSource *src;
 };
 
 }

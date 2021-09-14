@@ -123,4 +123,22 @@ void dispatchAsync(ActionBlock block, void *context, void *data1, void *data2) {
   dispatchAsync(autoRelease(new ActionBlockRunnable(block, context, data1, data2)));
 }
 
+void dispatchAsync(std::function<void()> lambda) {
+  class LambdaRunnable : public Runnable {
+  public:
+    LambdaRunnable(std::function<void()> l)
+    : lambda(l) {
+    }
+
+    void run() override {
+      lambda();
+    }
+
+  private:
+    std::function<void()> lambda;
+  };
+
+  dispatchAsync(autoRelease(new LambdaRunnable(lambda)));
+}
+
 }

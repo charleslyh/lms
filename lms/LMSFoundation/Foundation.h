@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstdio>
+#include <functional>
 
 
 namespace lms {
@@ -61,5 +62,6 @@ typedef void (*ActionBlock)(void *context, void *data1, void *data2);
 
 void dispatchAsync(Runnable *runnable);
 void dispatchAsync(ActionBlock block, void *context, void *data1 = nullptr, void *data2 = nullptr);
+void dispatchAsync(std::function<void()> lambda);
 
 }
