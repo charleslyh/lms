@@ -13,8 +13,8 @@ public:
 
 class Decoder : public PacketAcceptor {
 public:
-  virtual void open() = 0;
-  virtual void close() = 0;
+  virtual void prepare() = 0;
+  virtual void teardown() = 0;
   virtual std::map<std::string, void*> meta() = 0;
 
 public:

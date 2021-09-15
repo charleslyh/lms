@@ -9,7 +9,7 @@ namespace lms {
 
 class Render : public FrameAcceptor {
 public:
-  virtual void prepare(std::map<std::string, void*> streamMeta) = 0;
+  virtual void prepare(std::map<std::string, void*> codecMeta) = 0;
   virtual void teardown() = 0;
 };
 

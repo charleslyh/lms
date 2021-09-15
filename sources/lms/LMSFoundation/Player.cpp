@@ -52,7 +52,7 @@ void Player::play() {
     return;
   }
 
-  videoDecoder->open();
+  videoDecoder->prepare();
   videoRender->prepare(videoDecoder->meta());
   
   // 在最后向数据源增加一个主动加载触发器，以便在处理完成后循环加载下一个数据包
@@ -66,7 +66,7 @@ void Player::stop() {
 
   src->removePacketAcceptor(videoDecoder);
 
-  videoDecoder->close();
+  videoDecoder->teardown();
   src->close();
 }
 

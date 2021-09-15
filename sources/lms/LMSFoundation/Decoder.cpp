@@ -14,8 +14,8 @@ public:
   }
   
 protected:
-  void open() override;
-  void close() override;
+  void prepare() override;
+  void teardown() override;
   std::map<std::string, void*> meta() override;
   
 protected:
@@ -26,7 +26,7 @@ private:
   AVCodecContext    *codecContext;
 };
 
-void FFMDecoder::open() {
+void FFMDecoder::prepare() {
   printf("MockDecoder::open()\n");
   
   AVCodec *codec = nullptr;
@@ -51,7 +51,7 @@ void FFMDecoder::open() {
   }
 }
 
-void FFMDecoder::close() {
+void FFMDecoder::teardown() {
   printf("MockDecoder::close()\n");
 }
 
