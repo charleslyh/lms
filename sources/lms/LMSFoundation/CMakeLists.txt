@@ -15,6 +15,8 @@ target_sources(LMSFoundation
     Player.cpp
     Decoder.h
     Decoder.cpp
+    Render.h
+    Render.cpp
 
     PacketSource.h
 )

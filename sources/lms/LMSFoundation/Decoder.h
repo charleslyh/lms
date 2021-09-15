@@ -15,6 +15,7 @@ class Decoder : public PacketAcceptor {
 public:
   virtual void open() = 0;
   virtual void close() = 0;
+  virtual std::map<std::string, void*> meta() = 0;
 
 public:
   void addFrameAcceptor(FrameAcceptor *acceptor) {
@@ -36,6 +37,6 @@ private:
   std::list<FrameAcceptor *> acceptors;
 };
 
-Decoder *createDecoder(PacketSource *source);
+Decoder *createDecoder(std::map<std::string, void*> meta);
 
 }

@@ -34,11 +34,19 @@ void Object::release() {
 
 
 void retain(Object *object) {
+  if (object == nullptr) {
+    return;
+  }
+
   object->retain();
 }
 
 
 void release(Object *object) {
+  if (object == nullptr) {
+    return;
+  }
+
   object->release();
 }
 

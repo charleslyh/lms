@@ -24,3 +24,5 @@ private:
 
 
 void SDL_DispatchRunnable(lms::Runnable *runnable);
+
+extern SDL_Window *mainWindow;
