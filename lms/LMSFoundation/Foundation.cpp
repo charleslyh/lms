@@ -95,11 +95,19 @@ void unInit() {
 }
 
 
-void dispatchAsync(Runnable *runnable) {
-  core->mainQueue->async(runnable);
+DispatchQueue *mainQueue() {
+  return core->mainQueue;
 }
 
-void dispatchAsync(ActionBlock block, void *context, void *data1, void *data2) {
+DispatchQueue *createDispatchQueue(const char *queueName) {
+  return retain(core->mainQueue);
+}
+
+void dispatchAsync(DispatchQueue *queue, Runnable *runnable) {
+  queue->async(runnable);
+}
+
+void dispatchAsync(DispatchQueue *queue, ActionBlock block, void *context, void *data1, void *data2) {
   class ActionBlockRunnable : public Runnable {
   public:
     ActionBlockRunnable(ActionBlock block, void *context, void *data1, void *data2)
@@ -120,10 +128,10 @@ void dispatchAsync(ActionBlock block, void *context, void *data1, void *data2) {
     void *data2;
   };
 
-  dispatchAsync(autoRelease(new ActionBlockRunnable(block, context, data1, data2)));
+  queue->async(autoRelease(new ActionBlockRunnable(block, context, data1, data2)));
 }
 
-void dispatchAsync(std::function<void()> lambda) {
+void dispatchAsync(DispatchQueue *queue, std::function<void()> lambda) {
   class LambdaRunnable : public Runnable {
   public:
     LambdaRunnable(std::function<void()> l)
@@ -138,7 +146,7 @@ void dispatchAsync(std::function<void()> lambda) {
     std::function<void()> lambda;
   };
 
-  dispatchAsync(autoRelease(new LambdaRunnable(lambda)));
+  queue->async(autoRelease(new LambdaRunnable(lambda)));
 }
 
 }

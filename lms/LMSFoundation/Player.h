@@ -44,16 +44,19 @@ class VideoFile : public PassivePacketSource {
 public:
   VideoFile(const char *path) {
     printf("VideoFile::VideoFile(\"%s\"): %p\n", path, this);
-    this->path = strdup(path);
+    this->path  = strdup(path);
+    this->queue = createDispatchQueue("video_file");
   }
 
   ~VideoFile() {
+    lms::release(this->queue);
     free(this->path);
     printf("VideoFile::~VideoFile(): %p\n", this);
   }
 
   void open() override {
     context = nullptr;
+
     int rt = 0;
 
     rt = avformat_open_input(&context, path, nullptr, nullptr);
@@ -76,7 +79,7 @@ public:
   }
 
   void loadPackets(int numberRequested) override {
-    dispatchAsync([this] () {
+    dispatchAsync(mainQueue(), [this] () {
       int status = av_read_frame(context, &sharedPacket);
     
       if (status >= 0) {
@@ -87,9 +90,11 @@ public:
   }
 
 private:
+  char *path;
   AVFormatContext *context;
   AVPacket sharedPacket;
-  char *path;
+
+  DispatchQueue *queue;
 };
 
 

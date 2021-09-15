@@ -60,8 +60,12 @@ void unInit();
 
 typedef void (*ActionBlock)(void *context, void *data1, void *data2);
 
-void dispatchAsync(Runnable *runnable);
-void dispatchAsync(ActionBlock block, void *context, void *data1 = nullptr, void *data2 = nullptr);
-void dispatchAsync(std::function<void()> lambda);
+void dispatchAsync(DispatchQueue *queue, Runnable *runnable);
+void dispatchAsync(DispatchQueue *queue, ActionBlock block, void *context, void *data1 = nullptr, void *data2 = nullptr);
+void dispatchAsync(DispatchQueue *queue, std::function<void()> lambda);
+
+DispatchQueue *mainQueue();
+
+DispatchQueue *createDispatchQueue(const char *queueName);
 
 }
