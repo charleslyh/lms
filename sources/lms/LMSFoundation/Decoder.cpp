@@ -14,9 +14,9 @@ public:
   }
   
 protected:
-  void prepare() override;
-  void teardown() override;
-  std::map<std::string, void*> meta() override;
+  void startDecoding() override;
+  void stopDecoding() override;
+  Metadata meta() override;
   
 protected:
   void didReceivePacket(void *packet) override;
@@ -26,7 +26,7 @@ private:
   AVCodecContext    *codecContext;
 };
 
-void FFMDecoder::prepare() {
+void FFMDecoder::startDecoding() {
   printf("MockDecoder::open()\n");
   
   AVCodec *codec = nullptr;
@@ -51,11 +51,11 @@ void FFMDecoder::prepare() {
   }
 }
 
-void FFMDecoder::teardown() {
+void FFMDecoder::stopDecoding() {
   printf("MockDecoder::close()\n");
 }
 
-std::map<std::string, void*> FFMDecoder::meta() {
+Metadata FFMDecoder::meta() {
   return {
     {"codec_context", (void*) codecContext},
   };
@@ -69,37 +69,38 @@ void FFMDecoder::didReceivePacket(void *packet) {
   }
   
   auto avpkt = (AVPacket *)packet;
-
-  printf("Packet {stream:%d, size:%d, pts:%lld, dts:%lld}\n"
-     , avpkt->stream_index
-     , avpkt->size
-     , avpkt->pts
-     , avpkt->dts);
-  
-  int rt = avcodec_send_packet(codecContext, avpkt);
-  if (rt < 0) {
-    printf("Error sending packet for decoding: %d\n", rt);
-    return;
-  }
-  AVFrame *frame = av_frame_alloc();
-  while (rt >= 0) {
-    rt = avcodec_receive_frame(codecContext, frame);
-    if (rt == AVERROR(EAGAIN) || rt == AVERROR_EOF) {
-      return;
-    } else if (rt < 0) {
-      printf("Error while decoding.\n");
+ 
+  dispatchAsync(mainQueue(), [this, avpkt]() {
+    notifyPacketDecodingEvent(avpkt, 0);
+    
+    int rt = avcodec_send_packet(codecContext, avpkt);
+    if (rt < 0) {
+      printf("Error sending packet for decoding: %d\n", rt);
       return;
     }
+    while (rt >= 0) {
+      AVFrame *frame = av_frame_alloc();
+      rt = avcodec_receive_frame(codecContext, frame);
+      if (rt == AVERROR(EAGAIN) || rt == AVERROR_EOF) {
+        break;
+      } else if (rt < 0) {
+        printf("Error while decoding.\n");
+        return;
+      }
 
-    deliverFrame(frame);
-  }
+      printf("FFMDecoder::didReceivePacket | Did decode frame:%p\n", frame);
+      deliverFrame(frame);
+    }
+    
+    notifyPacketDecodingEvent(avpkt, 1);
+  });
 }
 
-Decoder *createDecoder(std::map<std::string, void*> meta) {
+Decoder *createDecoder(const Metadata& meta) {
   // 根据meta信息匹配一个可创建，且最合适的解码器
 
   // 为了测试，返回一个假的解码器
-  auto st = (AVStream *)meta["stream"];
+  auto st = (AVStream *)meta.at("stream");
   return new FFMDecoder(st->codecpar);
 }
 

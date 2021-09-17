@@ -8,10 +8,12 @@ extern "C" {
   #include <SDL2/SDL.h>
 }
 
-class SDLView : public lms::Render {
+class SDLView : public lms::VideoRender {
 protected:
-  void prepare(std::map<std::string, void *> codecMeta) override {
-    cc = (AVCodecContext *)codecMeta["codec_context"];
+  void startRendering(const lms::Metadata& codecMeta, lms::FramesBuffer *framesBuffer) override {
+    this->framesBuffer = framesBuffer;
+
+    cc = (AVCodecContext *)codecMeta.at("codec_context");
     
     Uint32 renderFlags = SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE;
     renderer = SDL_CreateRenderer(mainWindow, -1, renderFlags);
@@ -42,38 +44,47 @@ protected:
     
     yuv = av_frame_alloc();
     av_image_fill_arrays(yuv->data, yuv->linesize, buffer, AV_PIX_FMT_YUV420P, cc->width, cc->height, 32);
+    
+    loadFrame();
   }
   
-  void teardown() override {
+  void stopRendering() override {
   }
-
-protected:
-  void didReceiveFrame(void *f) override {
-    auto frame = (AVFrame *)f;
-    printf("SDLView::didReceiveFrame(%p)\n", frame);
+  
+private:
+  void loadFrame() {
+    lms::dispatchAfter(lms::mainQueue(), 33, [this] {
+      auto frame = (AVFrame *)framesBuffer->popFrame(0, 0);
+      if (frame != nullptr) {
+        printf("%010u: Start rendering frame: %p\n", SDL_GetTicks(), frame);
+        rect.x = 0;
+        rect.y = 0;
+        rect.w = cc->width;
+        rect.h = cc->height;
     
-    rect.x = 0;
-    rect.y = 0;
-    rect.w = cc->width;
-    rect.h = cc->height;
-
-    sws_scale(sws_ctx,
-              (uint8_t const *const *)frame->data,
-              frame->linesize,
-              0,
-              cc->height,
-              yuv->data,
-              yuv->linesize);
-
-    SDL_UpdateYUVTexture(texture,
-                         &rect,
-                         yuv->data[0], yuv->linesize[0],
-                         yuv->data[1], yuv->linesize[1],
-                         yuv->data[2], yuv->linesize[2]);
-
-    SDL_RenderClear(renderer);
-    SDL_RenderCopy(renderer, texture, NULL, NULL);
-    SDL_RenderPresent(renderer);
+        sws_scale(sws_ctx,
+                  (uint8_t const *const *)frame->data,
+                  frame->linesize,
+                  0,
+                  cc->height,
+                  yuv->data,
+                  yuv->linesize);
+    
+        SDL_UpdateYUVTexture(texture,
+                             &rect,
+                             yuv->data[0], yuv->linesize[0],
+                             yuv->data[1], yuv->linesize[1],
+                             yuv->data[2], yuv->linesize[2]);
+    
+        SDL_RenderClear(renderer);
+        SDL_RenderCopy(renderer, texture, NULL, NULL);
+        SDL_RenderPresent(renderer);
+      } else {
+        // printf("No cached frames\n");
+      }
+    
+//      loadFrame();
+    });
   }
   
 private:
@@ -84,8 +95,7 @@ private:
   SDL_Renderer      *renderer = nullptr;
   SDL_Texture       *texture  = nullptr;
   SDL_Rect           rect;
-
-  
+  lms::FramesBuffer *framesBuffer;
 };
 
 class PlayerAppDelegate: public SDLAppDelegate, public lms::DispatchQueue {
@@ -109,6 +119,10 @@ public:
 public:
   void async(lms::Runnable *runnable) override {
     SDL_DispatchRunnable(runnable);
+  }
+  
+  void schedule(lms::Runnable *runnable, int delay) override {
+    SDL_ScheduleRunnable(runnable, delay);
   }
 
 private:

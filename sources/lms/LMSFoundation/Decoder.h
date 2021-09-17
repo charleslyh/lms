@@ -11,13 +11,23 @@ public:
   virtual void didReceiveFrame(void *frame) = 0;
 };
 
+class DecoderDelegate {
+public:
+  virtual void willStartDecodingPacket(void *packet) = 0;
+  virtual void didFinishDecodingPacket(void *packet) = 0;
+};
+
 class Decoder : public PacketAcceptor {
 public:
-  virtual void prepare() = 0;
-  virtual void teardown() = 0;
-  virtual std::map<std::string, void*> meta() = 0;
+  virtual void startDecoding() = 0;
+  virtual void stopDecoding() = 0;
+  virtual Metadata meta() = 0;
 
 public:
+  void setDelegate(DecoderDelegate *delegate) {
+    this->delegate = delegate;
+  }
+  
   void addFrameAcceptor(FrameAcceptor *acceptor) {
     acceptors.push_back(acceptor);
   }
@@ -32,11 +42,24 @@ protected:
       acceptor->didReceiveFrame(frame);
     });
   }
+  
+  void notifyPacketDecodingEvent(void *packet, int type) {
+    if (delegate == nullptr) {
+      return;
+    }
+    
+    if (type == 0) {
+      delegate->willStartDecodingPacket(packet);
+    } else if (type == 1) {
+      delegate->didFinishDecodingPacket(packet);
+    }
+  }
 
 private:
+  DecoderDelegate *delegate = nullptr;
   std::list<FrameAcceptor *> acceptors;
 };
 
-Decoder *createDecoder(std::map<std::string, void*> meta);
+Decoder *createDecoder(const Metadata& meta);
 
 }

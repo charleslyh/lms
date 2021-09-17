@@ -28,7 +28,7 @@ public:
   virtual int open() = 0;
   virtual void close() = 0;
   virtual int numberOfStreams() = 0;
-  virtual std::map<std::string, void*> streamMetaAt(int streamIndex) = 0;
+  virtual Metadata streamMetaAt(int streamIndex) = 0;
   
 public:
   void addPacketAcceptor(int streamIndex, PacketAcceptor *acceptor) {

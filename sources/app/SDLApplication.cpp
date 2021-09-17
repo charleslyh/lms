@@ -50,18 +50,37 @@ void SDLApplication::run(SDLAppDelegate *delegate) {
   delegate->willTerminateApplication();
 }
 
-void SDL_DispatchRunnable(lms::Runnable *runnable) {
+static
+void PostRunnable(lms::Runnable *runnable, bool skipRetain) {
   SDL_Event event;
   SDL_zero(event);
+  
+  if (!skipRetain) {
+    lms::retain(runnable);
+  }
 
   // event是被异步执行的，autoReleasePool有可能先于runnable被执行前就被清理，即：
   // 1. SDL_DispatchRunnable
   // 2. lms::drainAutoReleasePool
   // 3. runnable->run()
   // 因此，需要手动持有runnable的引用，才能保证资源在run之后被正确释放
-  event.user.data1 = lms::retain(runnable);
+  event.user.data1 = runnable;
   event.user.data2 = nullptr;
   event.user.code  = 0;
   event.type = customEventType;
   SDL_PushEvent(&event);
+}
+
+void SDL_DispatchRunnable(lms::Runnable *runnable) {
+  PostRunnable(runnable, false);
+}
+
+Uint32 my_callbackfunc(Uint32 interval, lms::Runnable *runnable) {
+  PostRunnable(runnable, false);
+  return interval;
+}
+
+void SDL_ScheduleRunnable(lms::Runnable *runnable, int delayMS) {
+  lms::retain(runnable);
+  SDL_AddTimer(delayMS, (SDL_TimerCallback)my_callbackfunc, runnable);
 }

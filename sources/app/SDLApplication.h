@@ -24,5 +24,6 @@ private:
 
 
 void SDL_DispatchRunnable(lms::Runnable *runnable);
+void SDL_ScheduleRunnable(lms::Runnable *runnalbe, int delayMS);
 
 extern SDL_Window *mainWindow;

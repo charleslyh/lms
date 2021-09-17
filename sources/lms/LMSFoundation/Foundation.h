@@ -3,6 +3,8 @@
 #include <atomic>
 #include <cstdio>
 #include <functional>
+#include <map>
+#include <string>
 
 
 namespace lms {
@@ -47,6 +49,7 @@ public:
 class DispatchQueue : public Object {
 public:
   virtual void async(Runnable *runnable) = 0;
+  virtual void schedule(Runnable *runnable, int delayMs) = 0;
 };
 
 
@@ -64,8 +67,13 @@ void dispatchAsync(DispatchQueue *queue, Runnable *runnable);
 void dispatchAsync(DispatchQueue *queue, ActionBlock block, void *context, void *data1 = nullptr, void *data2 = nullptr);
 void dispatchAsync(DispatchQueue *queue, std::function<void()> lambda);
 
+void dispatchAfter(DispatchQueue *queue, int delayMS, std::function<void()> lambda);
+
 DispatchQueue *mainQueue();
 
 DispatchQueue *createDispatchQueue(const char *queueName);
 
+typedef std::map<std::string, void*> Metadata;
+typedef void Frame;
+typedef void Packet;
 }

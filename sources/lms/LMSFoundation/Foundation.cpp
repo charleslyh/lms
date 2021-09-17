@@ -27,7 +27,7 @@ void Object::release() {
 
   refCount -= 1;
 
-  if (refCount <= 0) {
+  if (refCount == 0) {
     delete this;
   }
 }
@@ -139,22 +139,26 @@ void dispatchAsync(DispatchQueue *queue, ActionBlock block, void *context, void 
   queue->async(autoRelease(new ActionBlockRunnable(block, context, data1, data2)));
 }
 
+class LambdaRunnable : public Runnable {
+public:
+  LambdaRunnable(std::function<void()> l)
+  : lambda(l) {
+  }
+
+  void run() override {
+    lambda();
+  }
+
+private:
+  std::function<void()> lambda;
+};
+
 void dispatchAsync(DispatchQueue *queue, std::function<void()> lambda) {
-  class LambdaRunnable : public Runnable {
-  public:
-    LambdaRunnable(std::function<void()> l)
-    : lambda(l) {
-    }
-
-    void run() override {
-      lambda();
-    }
-
-  private:
-    std::function<void()> lambda;
-  };
-
   queue->async(autoRelease(new LambdaRunnable(lambda)));
+}
+
+void dispatchAfter(DispatchQueue *queue, int delayMS, std::function<void()> lambda) {
+  queue->schedule(autoRelease(new LambdaRunnable(lambda)), delayMS);
 }
 
 }

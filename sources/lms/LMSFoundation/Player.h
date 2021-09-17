@@ -39,7 +39,7 @@ public:
     return context->nb_streams;
   }
   
-  std::map<std::string, void*> streamMetaAt(int index) override {
+  Metadata streamMetaAt(int index) override {
     return {
       {"type",   (void *)"ffmpeg"},
       {"stream", context->streams[index]},
@@ -70,15 +70,19 @@ public:
   }
 
   void loadPackets(int numberRequested) override {
-    dispatchAsync(mainQueue(), [this] () {
-      AVPacket *packet = av_packet_alloc();
-          
-      int rt = av_read_frame(context, packet);
-      if (rt >= 0) {
-        deliverPacket(packet);
-//        av_packet_unref(sharedPacket);
+    dispatchAsync(mainQueue(), [this, numberRequested] () {
+      int numberRemains = numberRequested;
+      while(numberRemains > 0) {
+        AVPacket *packet = av_packet_alloc();
+            
+        int rt = av_read_frame(context, packet);
+        if (rt >= 0) {
+          deliverPacket(packet);
+        }
+        
+        numberRemains -= 1;
       }
-    });    
+    });
   }
 
 private:
@@ -88,22 +92,20 @@ private:
 };
 
 
-class Player: public PacketAcceptor {
+class Player : public Object {
 public:
   Player(PassivePacketSource *src);
   ~Player();
   
   void play();
   void stop();
-  void setVideoRender(Render *videoRender);
-
-protected:
-  void didReceivePacket(void *pkt) override;
+  void setVideoRender(VideoRender *videoRender);
 
 private:
   PassivePacketSource *src;
-  Decoder *videoDecoder;
-  Render  *videoRender;
+  Decoder      *videoDecoder;
+  FramesBuffer *videoFramesBuffer;
+  VideoRender  *videoRender;
 };
 
 }
