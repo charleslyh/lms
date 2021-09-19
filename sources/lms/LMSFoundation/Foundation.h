@@ -26,7 +26,9 @@ void performAutoRelease(Object *object);
 
 template<class T>
 T retain(T object) {
-  object->retain();
+  if (object != nullptr) {
+    object->retain();
+  }
   return object;
 }
 

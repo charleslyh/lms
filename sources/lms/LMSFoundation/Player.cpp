@@ -19,6 +19,7 @@ Player::Player(PassivePacketSource *s) {
 }
 
 Player::~Player() {
+  lms::release(videoFramesBuffer);
   lms::release(videoRender);
   lms::release(videoDecoder);
   lms::release(src);
@@ -35,12 +36,28 @@ void Player::setVideoRender(Render *render) {
 class Coordinator : public FramesBufferDelegate, public PacketAcceptor, public DecoderDelegate {
 public:
   Coordinator(PassivePacketSource *source) {
-    this->source = source;
+    this->source = lms::retain(source);
+  }
+  
+  ~Coordinator() {
+    lms::release(source);
   }
   
   /* from buffer */
-  void didTouchFrames(size_t currentBufferingFrames) override {
-    int packetsToLoad = std::max(0, idealBufferingFrames + 3 - (int)currentBufferingFrames - packetsLoading - packetsDecoding);
+  void didTouchFrames(size_t framesStored) override {
+    int packetsToLoad = FramesExpected - (int)framesStored - packetsLoading - packetsDecoding;
+    
+    // 保底缓存帧数，由于加载是需要时间的，所以如果一帧来了再去请求下一帧，就会退化成串行处理模式
+    // 应对策略是使用一个保底帧数来使加载、解码、渲染成为并行流水线模式
+    packetsToLoad += 5;
+    
+    // 如果一个packet中包含较多的帧，则可能导致framesStored较大。进而使得packetsToLoad为负数
+    // 如：初始状态下，发起15个packets加载请求
+    // 每个packet中解出了3个frame。则framesStored为45, packetsLoading, packetsDecoding均为0
+    // 最终，packetsToLoad 为 15 - 45 - 0 - 0 + 5 = -25
+    // 对此，认为只要framesStored超过了FramesExpected，则为缓存充足的情况，可以不发起加载请求
+    packetsToLoad = std::max(0, packetsToLoad);
+
     if (packetsToLoad <= 0) {
       return;
     }
@@ -67,13 +84,13 @@ public:
 private:
   PassivePacketSource *source;
 
-  const int idealBufferingFrames = 10;
+  const int FramesExpected = 10;
   int packetsLoading = 0;
   int packetsDecoding = 0;
 };
 
 void Player::play() {
-  LMSLogInfo("Start playing");
+  LMSLogInfo(nullptr);
 
   if (src->open() != 0) {
     return;

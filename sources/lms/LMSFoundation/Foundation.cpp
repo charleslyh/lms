@@ -33,16 +33,6 @@ void Object::release() {
   }
 }
 
-
-void retain(Object *object) {
-  if (object == nullptr) {
-    return;
-  }
-
-  object->retain();
-}
-
-
 void release(Object *object) {
   if (object == nullptr) {
     return;
@@ -71,6 +61,10 @@ static Core *core = nullptr;
 
 
 void performAutoRelease(Object *object) {
+  if (object == nullptr) {
+    return;
+  }
+
   core->autoReleasePool.push_back(object);
 }
 

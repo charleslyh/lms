@@ -19,14 +19,16 @@ public:
 
 class Decoder : public PacketAcceptor {
 public:
-  virtual Metadata meta() = 0;
-  virtual void startDecoding() = 0;
-  virtual void stopDecoding() = 0;
+  ~Decoder();
 
-public:
   void setDelegate(DecoderDelegate *delegate);
   void addFrameAcceptor(FrameAcceptor *acceptor);
   void removeFrameAcceptor(FrameAcceptor *acceptor);
+
+public:
+  virtual Metadata meta() = 0;
+  virtual void startDecoding() = 0;
+  virtual void stopDecoding() = 0;
 
 protected:
   void deliverFrame(Frame *frame);

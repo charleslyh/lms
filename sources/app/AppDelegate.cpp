@@ -65,6 +65,8 @@ public:
   }
 
   void loadPackets(int numberRequested) override {
+    LMSLogVerbose("numberRequested: %d", numberRequested);
+    
     dispatchAsync(lms::mainQueue(), [this, numberRequested] () {
       int numberRemains = numberRequested;
       while(numberRemains > 0) {

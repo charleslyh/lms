@@ -22,7 +22,7 @@ private:
   PassivePacketSource *src;
   Decoder      *videoDecoder;
   FramesBuffer *videoFramesBuffer;
-  Render  *videoRender;
+  Render       *videoRender;
 };
 
 }

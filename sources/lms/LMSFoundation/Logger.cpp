@@ -54,14 +54,20 @@ void writeLogVargs(const char *fn, int ln, const char *func, LogLevel lv, const 
 
   Uint32 ms = SDL_GetTicks() % 1000;
 
-  len = snprintf(wptr, remainBufferSz, ".%03u %c/%s:%d/%s | ", ms, chLevel, fn, ln, func);
-  wptr += len;
-  remainBufferSz -= len;
-
-  len = vsnprintf(wptr, remainBufferSz, fmt, vargs);
+  len = snprintf(wptr, remainBufferSz, ".%03u %c/%s:%d/%s", ms, chLevel, fn, ln, func);
   wptr += len;
   remainBufferSz -= len;
   
+  if (fmt != nullptr) {
+    len = snprintf(wptr, remainBufferSz, " | ");
+    wptr += len;
+    remainBufferSz -= len;
+
+    len = vsnprintf(wptr, remainBufferSz, fmt, vargs);
+    wptr += len;
+    remainBufferSz -= len;
+  }
+
   snprintf(wptr, remainBufferSz, "\n");
 
   getLogWriter()->write(buffer);

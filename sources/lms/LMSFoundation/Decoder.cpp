@@ -99,16 +99,32 @@ void FFMDecoder::didReceivePacket(Packet *packet) {
   });
 }
 
+Decoder::~Decoder() {
+  setDelegate(nullptr);
+}
+
 void Decoder::setDelegate(DecoderDelegate *delegate) {
-  this->delegate = delegate;
+  if (this->delegate != nullptr) {
+    lms::release(this->delegate);
+  }
+  
+  this->delegate = lms::retain(delegate);
 }
 
 void Decoder::addFrameAcceptor(FrameAcceptor *acceptor) {
+  lms::retain(acceptor);
   acceptors.push_back(acceptor);
 }
 
 void Decoder::removeFrameAcceptor(FrameAcceptor *acceptor) {
-  acceptors.remove(acceptor);
+  acceptors.remove_if([acceptor] (FrameAcceptor *acc) {
+    if (acc != acceptor) {
+      return false;
+    }
+    
+    lms::release(acc);
+    return true;
+  });
 }
 
 void Decoder::deliverFrame(Frame *frame) {
