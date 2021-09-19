@@ -11,12 +11,15 @@ target_sources(LMSFoundation
   PRIVATE
     Foundation.h
     Foundation.cpp
-    Player.h
-    Player.cpp
+    PacketSource.h
+    PacketSource.cpp
     Decoder.h
     Decoder.cpp
     Render.h
     Render.cpp
+    Player.h
+    Player.cpp
 
-    PacketSource.h
+    Logger.h
+    Logger.cpp
 )

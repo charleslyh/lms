@@ -1,5 +1,9 @@
 #include "LMSFoundation/Foundation.h"
+#include "LMSFoundation/PacketSource.h"
 #include "LMSFoundation/Player.h"
+#include "LMSFoundation/Decoder.h"
+#include "LMSFoundation/Render.h"
+#include "LMSFoundation/Logger.h"
 #include "SDLApplication.h"
 
 extern "C" {
@@ -8,7 +12,84 @@ extern "C" {
   #include <SDL2/SDL.h>
 }
 
-class SDLView : public lms::VideoRender {
+
+class VideoFile : public lms::PassivePacketSource {
+public:
+  VideoFile(const char *path) {
+    LMSLogVerbose("path: %s", path);
+
+    this->context = nullptr;
+    this->path    = strdup(path);
+    this->queue   = lms::createDispatchQueue("video_file");
+  }
+
+  ~VideoFile() {
+    assert(context == nullptr);
+
+    lms::release(this->queue);
+    free(this->path);
+  }
+
+  int numberOfStreams() override {
+    return context->nb_streams;
+  }
+  
+  lms::Metadata streamMetaAt(int index) override {
+    return {
+      {"type",   (void *)"ffmpeg"},
+      {"stream", context->streams[index]},
+    };
+  }
+
+  int open() override {
+    int rt = 0;
+
+    rt = avformat_open_input(&context, path, nullptr, nullptr);
+    if (rt != 0) {
+      LMSLogError("Failed opening video file: %s", path);
+      return rt;
+    }
+
+    rt = avformat_find_stream_info(context, nullptr);
+    if (rt != 0) {
+      LMSLogError("Failed finding stream info");
+      return rt;
+    }
+    
+    av_dump_format(context, 0, path, 0);
+    return 0;
+  }
+
+  void close() override {
+    avformat_close_input(&context);
+  }
+
+  void loadPackets(int numberRequested) override {
+    dispatchAsync(lms::mainQueue(), [this, numberRequested] () {
+      int numberRemains = numberRequested;
+      while(numberRemains > 0) {
+        AVPacket *packet = av_packet_alloc();
+            
+        int rt = av_read_frame(context, packet);
+        if (rt >= 0) {
+          deliverPacket(packet);
+        }
+        
+        numberRemains -= 1;
+      }
+      
+      return 0;
+    });
+  }
+
+private:
+  char *path;
+  AVFormatContext    *context;
+  lms::DispatchQueue *queue;
+};
+
+
+class SDLView : public lms::Render {
 protected:
   void startRendering(const lms::Metadata& codecMeta, lms::FramesBuffer *framesBuffer) override {
     this->framesBuffer = framesBuffer;
@@ -53,37 +134,37 @@ protected:
   
 private:
   void loadFrame() {
-    lms::dispatchAfter(lms::mainQueue(), 33, [this] {
+    lms::dispatchAsyncPeriodically(lms::mainQueue(), 33, [this] {
       auto frame = (AVFrame *)framesBuffer->popFrame(0, 0);
-      if (frame != nullptr) {
-        printf("%010u: Start rendering frame: %p\n", SDL_GetTicks(), frame);
-        rect.x = 0;
-        rect.y = 0;
-        rect.w = cc->width;
-        rect.h = cc->height;
-    
-        sws_scale(sws_ctx,
-                  (uint8_t const *const *)frame->data,
-                  frame->linesize,
-                  0,
-                  cc->height,
-                  yuv->data,
-                  yuv->linesize);
-    
-        SDL_UpdateYUVTexture(texture,
-                             &rect,
-                             yuv->data[0], yuv->linesize[0],
-                             yuv->data[1], yuv->linesize[1],
-                             yuv->data[2], yuv->linesize[2]);
-    
-        SDL_RenderClear(renderer);
-        SDL_RenderCopy(renderer, texture, NULL, NULL);
-        SDL_RenderPresent(renderer);
-      } else {
-        // printf("No cached frames\n");
+      if (frame == nullptr) {
+        return -1;
       }
-    
-//      loadFrame();
+      
+      LMSLogVerbose("Start rendering frame: %p", frame);
+      rect.x = 0;
+      rect.y = 0;
+      rect.w = cc->width;
+      rect.h = cc->height;
+  
+      sws_scale(sws_ctx,
+                (uint8_t const *const *)frame->data,
+                frame->linesize,
+                0,
+                cc->height,
+                yuv->data,
+                yuv->linesize);
+  
+      SDL_UpdateYUVTexture(texture,
+                           &rect,
+                           yuv->data[0], yuv->linesize[0],
+                           yuv->data[1], yuv->linesize[1],
+                           yuv->data[2], yuv->linesize[2]);
+  
+      SDL_RenderClear(renderer);
+      SDL_RenderCopy(renderer, texture, NULL, NULL);
+      SDL_RenderPresent(renderer);
+      
+      return 0;
     });
   }
   
@@ -103,7 +184,7 @@ public:
   void didFinishLaunchingApplication(int argc, char **argv) override {
     lms::init({this});
 
-    lms::VideoFile *src = lms::autoRelease(new lms::VideoFile(argv[1]));
+    auto src = lms::autoRelease(new VideoFile(argv[1]));
     player = new lms::Player(src);
     player->setVideoRender(lms::autoRelease(new SDLView));
     player->play();
@@ -121,8 +202,8 @@ public:
     SDL_DispatchRunnable(runnable);
   }
   
-  void schedule(lms::Runnable *runnable, int delay) override {
-    SDL_ScheduleRunnable(runnable, delay);
+  void asyncPeriodically(int delay, lms::Runnable *runnable) override {
+    SDL_ScheduleRunnable(delay, runnable);
   }
 
 private:

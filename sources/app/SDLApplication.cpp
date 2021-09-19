@@ -1,6 +1,7 @@
+#include "SDLApplication.h"
+#include "LMSFoundation/Logger.h"
 #include <memory>
 #include <algorithm>
-#include "SDLApplication.h"
 
 static Uint32 customEventType;
 
@@ -8,7 +9,7 @@ SDL_Window *mainWindow;
 
 SDLApplication::SDLApplication(int argc, char **argv) {
   if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER)) {
-    fprintf(stderr, "Can't initialize SDL: %s\n", SDL_GetError());
+    LMSLogError("Can't initialize SDL: %s", SDL_GetError());
     exit(1);
   }
 
@@ -75,12 +76,12 @@ void SDL_DispatchRunnable(lms::Runnable *runnable) {
   PostRunnable(runnable, false);
 }
 
-Uint32 my_callbackfunc(Uint32 interval, lms::Runnable *runnable) {
+Uint32 periodicTimerProc(Uint32 interval, lms::Runnable *runnable) {
   PostRunnable(runnable, false);
   return interval;
 }
 
-void SDL_ScheduleRunnable(lms::Runnable *runnable, int delayMS) {
+void SDL_ScheduleRunnable(int delayMS, lms::Runnable *runnable) {
   lms::retain(runnable);
-  SDL_AddTimer(delayMS, (SDL_TimerCallback)my_callbackfunc, runnable);
+  SDL_AddTimer(delayMS, (SDL_TimerCallback)periodicTimerProc, runnable);
 }

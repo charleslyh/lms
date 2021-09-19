@@ -1,8 +1,9 @@
+#include "LMSFoundation/Foundation.h"
+#include "LMSFoundation/Logger.h"
 #include <cstdio>
 #include <list>
 #include <algorithm>
 #include <cassert>
-#include "LMSFoundation/Foundation.h"
 
 namespace lms {
 
@@ -18,12 +19,12 @@ Object::~Object() = default;
 void Object::retain() {
   refCount += 1;
 
-  // printf("Object::retain(%p)\n", this);
+  LMSLogVerbose("%p", this);
 }
 
 
 void Object::release() {
-  // printf("Object::release(%p)\n", this);
+  LMSLogVerbose("%p", this);
 
   refCount -= 1;
 
@@ -79,15 +80,12 @@ void drainAutoReleasePool() {
     return;
   }
 
-  // printf("> drainAutoReleasePool(): %lu\n", core->autoReleasePool.size());
+  LMSLogVerbose("size before drain: %lu", core->autoReleasePool.size());
 
   std::for_each(begin(core->autoReleasePool), end(core->autoReleasePool), [] (Object *obj) {
     obj->release();
   });
-
   core->autoReleasePool.clear();
-
-  // printf("< drainAutoReleasePool()\n");
 }
 
 
@@ -125,7 +123,7 @@ void dispatchAsync(DispatchQueue *queue, ActionBlock block, void *context, void 
       this->data2   = data2;
     }
 
-    void run() override {
+    int run() override {
       block(context, data1, data2);
     }
 
@@ -141,24 +139,24 @@ void dispatchAsync(DispatchQueue *queue, ActionBlock block, void *context, void 
 
 class LambdaRunnable : public Runnable {
 public:
-  LambdaRunnable(std::function<void()> l)
+  LambdaRunnable(std::function<int()> l)
   : lambda(l) {
   }
 
-  void run() override {
-    lambda();
+  int run() override {
+    return lambda();
   }
 
 private:
-  std::function<void()> lambda;
+  std::function<int()> lambda;
 };
 
-void dispatchAsync(DispatchQueue *queue, std::function<void()> lambda) {
+void dispatchAsync(DispatchQueue *queue, std::function<int()> lambda) {
   queue->async(autoRelease(new LambdaRunnable(lambda)));
 }
 
-void dispatchAfter(DispatchQueue *queue, int delayMS, std::function<void()> lambda) {
-  queue->schedule(autoRelease(new LambdaRunnable(lambda)), delayMS);
+void dispatchAsyncPeriodically(DispatchQueue *queue, int delayMS, std::function<int()> lambda) {
+  queue->asyncPeriodically(delayMS, autoRelease(new LambdaRunnable(lambda)));
 }
 
 }

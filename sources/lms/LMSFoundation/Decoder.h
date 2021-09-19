@@ -6,54 +6,31 @@
 
 namespace lms {
 
-class FrameAcceptor : public Object {
+class FrameAcceptor : virtual public Object {
 public:
-  virtual void didReceiveFrame(void *frame) = 0;
+  virtual void didReceiveFrame(Frame *frame) = 0;
 };
 
-class DecoderDelegate {
+class DecoderDelegate : virtual public Object {
 public:
-  virtual void willStartDecodingPacket(void *packet) = 0;
-  virtual void didFinishDecodingPacket(void *packet) = 0;
+  virtual void willStartDecodingPacket(Packet *packet) = 0;
+  virtual void didFinishDecodingPacket(Packet *packet) = 0;
 };
 
 class Decoder : public PacketAcceptor {
 public:
+  virtual Metadata meta() = 0;
   virtual void startDecoding() = 0;
   virtual void stopDecoding() = 0;
-  virtual Metadata meta() = 0;
 
 public:
-  void setDelegate(DecoderDelegate *delegate) {
-    this->delegate = delegate;
-  }
-  
-  void addFrameAcceptor(FrameAcceptor *acceptor) {
-    acceptors.push_back(acceptor);
-  }
-
-  void removeFrameAcceptor(FrameAcceptor *acceptor) {
-    acceptors.remove(acceptor);
-  }
+  void setDelegate(DecoderDelegate *delegate);
+  void addFrameAcceptor(FrameAcceptor *acceptor);
+  void removeFrameAcceptor(FrameAcceptor *acceptor);
 
 protected:
-  void deliverFrame(void *frame) {
-    std::for_each(begin(acceptors), end(acceptors), [frame] (FrameAcceptor *acceptor) {
-      acceptor->didReceiveFrame(frame);
-    });
-  }
-  
-  void notifyPacketDecodingEvent(void *packet, int type) {
-    if (delegate == nullptr) {
-      return;
-    }
-    
-    if (type == 0) {
-      delegate->willStartDecodingPacket(packet);
-    } else if (type == 1) {
-      delegate->didFinishDecodingPacket(packet);
-    }
-  }
+  void deliverFrame(Frame *frame);
+  void notifyDecoderEvent(Packet *packet, int type);
 
 private:
   DecoderDelegate *delegate = nullptr;

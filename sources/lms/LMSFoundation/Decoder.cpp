@@ -1,9 +1,10 @@
 #include "LMSFoundation/Decoder.h"
-
+#include "LMSFoundation/Logger.h"
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 }
+#include <map>
 
 namespace lms {
 
@@ -19,7 +20,7 @@ protected:
   Metadata meta() override;
   
 protected:
-  void didReceivePacket(void *packet) override;
+  void didReceivePacket(Packet *packet) override;
   
 private:
   AVCodecParameters *params;
@@ -27,12 +28,12 @@ private:
 };
 
 void FFMDecoder::startDecoding() {
-  printf("MockDecoder::open()\n");
+  LMSLogInfo("startDecoding");
   
   AVCodec *codec = nullptr;
   codec = avcodec_find_decoder(params->codec_id);
   if (codec == nullptr) {
-    printf("Unsupported codec.\n");
+    LMSLogError("Unsupported codec: %d", params->codec_id);
     return;
   }
 
@@ -40,19 +41,19 @@ void FFMDecoder::startDecoding() {
   codecContext = avcodec_alloc_context3(codec);
   int rt = avcodec_parameters_to_context(codecContext, params);
   if (rt != 0) {
-    printf("Could not copy codec context: %d\n", rt);
+    LMSLogError("Couldn't copy codec context: %d", rt);
     return;
   }
 
   rt = avcodec_open2(codecContext, codec, nullptr);
   if (rt != 0) {
-      printf("Could not open codec: %d\n", rt);
-      return;
+    LMSLogError("Couldn't open codec: %d", rt);
+    return;
   }
 }
 
 void FFMDecoder::stopDecoding() {
-  printf("MockDecoder::close()\n");
+  LMSLogInfo("stopDecoding");
 }
 
 Metadata FFMDecoder::meta() {
@@ -61,9 +62,9 @@ Metadata FFMDecoder::meta() {
   };
 }
 
-void FFMDecoder::didReceivePacket(void *packet) {
-  printf("MockDecoder::onReceivePacket(packet: %p)\n", packet);
-  
+void FFMDecoder::didReceivePacket(Packet *packet) {
+  LMSLogVerbose("packet: %p", packet);
+
   if (packet == nullptr) {
     return;
   }
@@ -71,12 +72,13 @@ void FFMDecoder::didReceivePacket(void *packet) {
   auto avpkt = (AVPacket *)packet;
  
   dispatchAsync(mainQueue(), [this, avpkt]() {
-    notifyPacketDecodingEvent(avpkt, 0);
-    
+    notifyDecoderEvent(avpkt, 0);
+    LMSLogVerbose("Begin decoding frame: %p", avpkt);
+
     int rt = avcodec_send_packet(codecContext, avpkt);
     if (rt < 0) {
-      printf("Error sending packet for decoding: %d\n", rt);
-      return;
+      LMSLogError("Error sending packet for decoding: %d", rt);
+      return -1;
     }
     while (rt >= 0) {
       AVFrame *frame = av_frame_alloc();
@@ -84,16 +86,47 @@ void FFMDecoder::didReceivePacket(void *packet) {
       if (rt == AVERROR(EAGAIN) || rt == AVERROR_EOF) {
         break;
       } else if (rt < 0) {
-        printf("Error while decoding.\n");
-        return;
+        LMSLogError("Error while decoding: %d", rt);
+        return -1;
       }
-
-      printf("FFMDecoder::didReceivePacket | Did decode frame:%p\n", frame);
+      
       deliverFrame(frame);
     }
     
-    notifyPacketDecodingEvent(avpkt, 1);
+    LMSLogVerbose("End decoding frame: %p", avpkt);
+    notifyDecoderEvent(avpkt, 1);
+    return 0;
   });
+}
+
+void Decoder::setDelegate(DecoderDelegate *delegate) {
+  this->delegate = delegate;
+}
+
+void Decoder::addFrameAcceptor(FrameAcceptor *acceptor) {
+  acceptors.push_back(acceptor);
+}
+
+void Decoder::removeFrameAcceptor(FrameAcceptor *acceptor) {
+  acceptors.remove(acceptor);
+}
+
+void Decoder::deliverFrame(Frame *frame) {
+  std::for_each(begin(acceptors), end(acceptors), [frame] (FrameAcceptor *acceptor) {
+    acceptor->didReceiveFrame(frame);
+  });
+}
+
+void Decoder::notifyDecoderEvent(Packet *packet, int type) {
+  if (delegate == nullptr) {
+    return;
+  }
+  
+  if (type == 0) {
+    delegate->willStartDecodingPacket(packet);
+  } else if (type == 1) {
+    delegate->didFinishDecodingPacket(packet);
+  }
 }
 
 Decoder *createDecoder(const Metadata& meta) {

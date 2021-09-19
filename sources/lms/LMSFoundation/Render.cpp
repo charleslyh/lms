@@ -2,11 +2,11 @@
 
 namespace lms {
 
-void VideoRender::setDelegate(RenderDelegate *delegate) {
+void Render::setDelegate(RenderDelegate *delegate) {
   this->delegate = delegate;
 }
 
-void VideoRender::notifyFrameRendered(void *frame) {
+void Render::notifyRenderEvent(Frame *frame) {
   if (delegate != nullptr) {
     delegate->didRenderFrame(frame);
   }

@@ -2,13 +2,14 @@
 
 #include "LMSFoundation/Foundation.h"
 #include "LMSFoundation/Decoder.h"
+#include "LMSFoundation/Logger.h"
 #include <map>
 #include <queue>
 #include <string>
 
 namespace lms {
 
-class FramesBufferDelegate : public Object {
+class FramesBufferDelegate : virtual public Object {
 public:
   virtual void didTouchFrames(size_t newSize) = 0;
 };
@@ -20,8 +21,6 @@ public:
     if (!cachedFrames.empty()) {
        frame = cachedFrames.front();
       cachedFrames.pop();
-      
-      printf("FramesBuffer::popFrame -> frame: %p, newSize:%lu\n", frame, cachedFrames.size());
     }
 
     delegate->didTouchFrames(cachedFrames.size());
@@ -38,10 +37,10 @@ public:
   }
   
 protected:
-  void didReceiveFrame(void *frame) override {
+  void didReceiveFrame(Frame *frame) override {
+    LMSLogVerbose("frame: %p", frame);
+    
     cachedFrames.push(frame);
-    printf("FramesBuffer::didReceiveFrame(%p) | newSize: %lu\n", frame, cachedFrames.size());
-
     delegate->didTouchFrames(cachedFrames.size());
   }
   
@@ -50,21 +49,22 @@ private:
   std::queue<Frame *>   cachedFrames;
 };
 
-class RenderDelegate : public Object {
+class RenderDelegate : virtual public Object {
 public:
-  virtual void didRenderFrame(void *frame) = 0;
+  virtual void didRenderFrame(Frame *frame) = 0;
 };
 
-class VideoRender : public Object {
+class Render : virtual public Object {
 public:
   void setDelegate(RenderDelegate *delegate);
 
-public:
+  // TODO: VideoRender是否应该和Codec概念进行解耦？这意味着sartRendering接口不应该有codecMeta的概念
+  // TODO: Render应该只做单纯的渲染工作，对buffer应该是无感知的
   virtual void startRendering(const Metadata& codecMeta, FramesBuffer *frameBuffer) = 0;
   virtual void stopRendering() = 0;
-  
+
 protected:
-  void notifyFrameRendered(void *frame);
+  void notifyRenderEvent(Frame *frame);
 
 private:
   RenderDelegate *delegate = nullptr;

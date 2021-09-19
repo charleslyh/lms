@@ -1,4 +1,7 @@
 #include "LMSFoundation/Player.h"
+#include "LMSFoundation/PacketSource.h"
+#include "LMSFoundation/Decoder.h"
+#include "LMSFoundation/Render.h"
 extern "C" {
   #include <libavcodec/avcodec.h>
   #include <libavformat/avformat.h>
@@ -9,7 +12,6 @@ extern "C" {
 namespace lms {
 
 Player::Player(PassivePacketSource *s) {
-  printf("Player::Player(): %p\n", this);
   src = lms::retain(s);
   videoDecoder = nullptr;
   videoRender  = nullptr;
@@ -20,10 +22,9 @@ Player::~Player() {
   lms::release(videoRender);
   lms::release(videoDecoder);
   lms::release(src);
-  printf("Player::~Player(): %p\n", this);
 }
 
-void Player::setVideoRender(VideoRender *render) {
+void Player::setVideoRender(Render *render) {
   if (videoRender != nullptr) {
     lms::release(videoRender);
   }
@@ -37,48 +38,42 @@ public:
     this->source = source;
   }
   
+  /* from buffer */
   void didTouchFrames(size_t currentBufferingFrames) override {
-    int packetsToLoad = std::max(0, idealBufferingFrames + 5 - (int)currentBufferingFrames - packetsLoading - packetsDecoding);
-    printf("CORD: toLoad:%2d <= cbf:%d, loading:%d, decoding:%d\n"
-           ,packetsToLoad
-           ,(int)currentBufferingFrames
-           ,packetsLoading
-           ,packetsDecoding);
-
+    int packetsToLoad = std::max(0, idealBufferingFrames + 3 - (int)currentBufferingFrames - packetsLoading - packetsDecoding);
     if (packetsToLoad <= 0) {
       return;
     }
-    
+
     packetsLoading += packetsToLoad;
     source->loadPackets(packetsToLoad);
   }
   
   /* from src */
   void didReceivePacket(void *packet) override {
-    printf("CORD: didReceivePacket\n");
     packetsLoading  -= 1;
   }
-   
+
+  /* from ecoder */
   void willStartDecodingPacket(void *packet) override {
     packetsDecoding += 1;
   }
 
   /* from decoder */
   void didFinishDecodingPacket(void *packet) override {
-    printf("CORD: didFinishDecodingPacket\n");
     packetsDecoding -= 1;
   }
   
 private:
   PassivePacketSource *source;
 
-  const int idealBufferingFrames = 1;
+  const int idealBufferingFrames = 10;
   int packetsLoading = 0;
   int packetsDecoding = 0;
 };
 
 void Player::play() {
-  printf("Player::play()\n");
+  LMSLogInfo("Start playing");
 
   if (src->open() != 0) {
     return;
@@ -101,7 +96,7 @@ void Player::play() {
   
   
   auto coordinator = new Coordinator(src);
-//  lms::autoRelease((Object *)coordinator);
+  autoRelease((Object *)coordinator);
   
   src->addPacketAcceptor(StreamIndexAny, coordinator);
   videoDecoder->setDelegate(coordinator);
@@ -115,7 +110,7 @@ void Player::play() {
 }
 
 void Player::stop() {
-  printf("Player::stop()\n");
+  LMSLogInfo("Stop playing");
 
   src->removePacketAcceptor(videoDecoder);
 

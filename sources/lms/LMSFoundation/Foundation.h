@@ -1,7 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <cstdio>
 #include <functional>
 #include <map>
 #include <string>
@@ -40,16 +39,16 @@ T autoRelease(T object) {
 void drainAutoReleasePool();
 
 
-class Runnable : public Object {
+class Runnable : virtual public Object {
 public:
-  virtual void run() = 0;
+  virtual int run() = 0;
 };
 
 
-class DispatchQueue : public Object {
+class DispatchQueue : virtual public Object {
 public:
   virtual void async(Runnable *runnable) = 0;
-  virtual void schedule(Runnable *runnable, int delayMs) = 0;
+  virtual void asyncPeriodically(int delayMs, Runnable *runnable) = 0;
 };
 
 
@@ -61,13 +60,13 @@ void init(InitParams params);
 void unInit();
 
 
-typedef void (*ActionBlock)(void *context, void *data1, void *data2);
+typedef int (*ActionBlock)(void *context, void *data1, void *data2);
 
 void dispatchAsync(DispatchQueue *queue, Runnable *runnable);
 void dispatchAsync(DispatchQueue *queue, ActionBlock block, void *context, void *data1 = nullptr, void *data2 = nullptr);
-void dispatchAsync(DispatchQueue *queue, std::function<void()> lambda);
+void dispatchAsync(DispatchQueue *queue, std::function<int()> lambda);
 
-void dispatchAfter(DispatchQueue *queue, int delayMS, std::function<void()> lambda);
+void dispatchAsyncPeriodically(DispatchQueue *queue, int delayMS, std::function<int()> lambda);
 
 DispatchQueue *mainQueue();
 
@@ -76,4 +75,5 @@ DispatchQueue *createDispatchQueue(const char *queueName);
 typedef std::map<std::string, void*> Metadata;
 typedef void Frame;
 typedef void Packet;
+
 }
