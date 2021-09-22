@@ -19,7 +19,8 @@ target_sources(LMSFoundation
     Render.cpp
     Player.h
     Player.cpp
-
     Logger.h
     Logger.cpp
+    Buffer.h
+    Buffer.cpp
 )

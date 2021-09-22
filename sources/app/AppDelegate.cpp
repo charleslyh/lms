@@ -4,6 +4,7 @@
 #include "LMSFoundation/Decoder.h"
 #include "LMSFoundation/Render.h"
 #include "LMSFoundation/Logger.h"
+#include "LMSFoundation/Buffer.h"
 #include "SDLApplication.h"
 
 extern "C" {
@@ -93,9 +94,7 @@ private:
 
 class SDLView : public lms::Render {
 protected:
-  void startRendering(const lms::Metadata& codecMeta, lms::FramesBuffer *framesBuffer) override {
-    this->framesBuffer = framesBuffer;
-
+  void start(const lms::Metadata& codecMeta) override {
     cc = (AVCodecContext *)codecMeta.at("codec_context");
     
     Uint32 renderFlags = SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE;
@@ -127,47 +126,38 @@ protected:
     
     yuv = av_frame_alloc();
     av_image_fill_arrays(yuv->data, yuv->linesize, buffer, AV_PIX_FMT_YUV420P, cc->width, cc->height, 32);
-    
-    loadFrame();
   }
   
   void stopRendering() override {
   }
   
-private:
-  void loadFrame() {
-    lms::dispatchAsyncPeriodically(lms::mainQueue(), 33, [this] {
-      auto frame = (AVFrame *)framesBuffer->popFrame(0, 0);
-      if (frame == nullptr) {
-        return -1;
-      }
-      
-      LMSLogVerbose("Start rendering frame: %p", frame);
-      rect.x = 0;
-      rect.y = 0;
-      rect.w = cc->width;
-      rect.h = cc->height;
-  
-      sws_scale(sws_ctx,
-                (uint8_t const *const *)frame->data,
-                frame->linesize,
-                0,
-                cc->height,
-                yuv->data,
-                yuv->linesize);
-  
-      SDL_UpdateYUVTexture(texture,
-                           &rect,
-                           yuv->data[0], yuv->linesize[0],
-                           yuv->data[1], yuv->linesize[1],
-                           yuv->data[2], yuv->linesize[2]);
-  
-      SDL_RenderClear(renderer);
-      SDL_RenderCopy(renderer, texture, NULL, NULL);
-      SDL_RenderPresent(renderer);
-      
-      return 0;
-    });
+protected:
+  void didReceiveFrame(lms::Frame *frm) override {
+    auto frame = (AVFrame *)frm;
+    
+    LMSLogVerbose("Start rendering frame: %p", frame);
+    rect.x = 0;
+    rect.y = 0;
+    rect.w = cc->width;
+    rect.h = cc->height;
+
+    sws_scale(sws_ctx,
+              (uint8_t const *const *)frame->data,
+              frame->linesize,
+              0,
+              cc->height,
+              yuv->data,
+              yuv->linesize);
+
+    SDL_UpdateYUVTexture(texture,
+                         &rect,
+                         yuv->data[0], yuv->linesize[0],
+                         yuv->data[1], yuv->linesize[1],
+                         yuv->data[2], yuv->linesize[2]);
+
+    SDL_RenderClear(renderer);
+    SDL_RenderCopy(renderer, texture, NULL, NULL);
+    SDL_RenderPresent(renderer);
   }
   
 private:
@@ -204,8 +194,8 @@ public:
     SDL_DispatchRunnable(runnable);
   }
   
-  void asyncPeriodically(int delay, lms::Runnable *runnable) override {
-    SDL_ScheduleRunnable(delay, runnable);
+  int asyncPeriodically(int delay, lms::Runnable *runnable) override {
+    return SDL_ScheduleRunnable(delay, runnable);
   }
 
 private:

@@ -15,8 +15,8 @@ public:
   }
   
 protected:
-  void startDecoding() override;
-  void stopDecoding() override;
+  void start() override;
+  void stop() override;
   Metadata meta() override;
   
 protected:
@@ -27,7 +27,7 @@ private:
   AVCodecContext    *codecContext;
 };
 
-void FFMDecoder::startDecoding() {
+void FFMDecoder::start() {
   LMSLogInfo("startDecoding");
   
   AVCodec *codec = nullptr;
@@ -52,7 +52,7 @@ void FFMDecoder::startDecoding() {
   }
 }
 
-void FFMDecoder::stopDecoding() {
+void FFMDecoder::stop() {
   LMSLogInfo("stopDecoding");
 }
 
@@ -89,7 +89,7 @@ void FFMDecoder::didReceivePacket(Packet *packet) {
         LMSLogError("Error while decoding: %d", rt);
         return -1;
       }
-      
+
       deliverFrame(frame);
     }
     
@@ -109,28 +109,6 @@ void Decoder::setDelegate(DecoderDelegate *delegate) {
   }
   
   this->delegate = lms::retain(delegate);
-}
-
-void Decoder::addFrameAcceptor(FrameAcceptor *acceptor) {
-  lms::retain(acceptor);
-  acceptors.push_back(acceptor);
-}
-
-void Decoder::removeFrameAcceptor(FrameAcceptor *acceptor) {
-  acceptors.remove_if([acceptor] (FrameAcceptor *acc) {
-    if (acc != acceptor) {
-      return false;
-    }
-    
-    lms::release(acc);
-    return true;
-  });
-}
-
-void Decoder::deliverFrame(Frame *frame) {
-  std::for_each(begin(acceptors), end(acceptors), [frame] (FrameAcceptor *acceptor) {
-    acceptor->didReceiveFrame(frame);
-  });
 }
 
 void Decoder::notifyDecoderEvent(Packet *packet, int type) {

@@ -2,6 +2,8 @@
 #include "LMSFoundation/PacketSource.h"
 #include "LMSFoundation/Decoder.h"
 #include "LMSFoundation/Render.h"
+#include "LMSFoundation/Buffer.h"
+#include "LMSFoundation/Logger.h"
 extern "C" {
   #include <libavcodec/avcodec.h>
   #include <libavformat/avformat.h>
@@ -12,40 +14,62 @@ extern "C" {
 namespace lms {
 
 Player::Player(PassivePacketSource *s) {
-  src = lms::retain(s);
-  videoDecoder = nullptr;
-  videoRender  = nullptr;
-  videoFramesBuffer = nullptr;
+  source = lms::retain(s);
+  decoder = nullptr;
+  render  = nullptr;
+  buffer = nullptr;
 }
 
 Player::~Player() {
-  lms::release(videoFramesBuffer);
-  lms::release(videoRender);
-  lms::release(videoDecoder);
-  lms::release(src);
+  lms::release(buffer);
+  lms::release(render);
+  lms::release(decoder);
+  lms::release(source);
 }
 
 void Player::setVideoRender(Render *render) {
-  if (videoRender != nullptr) {
-    lms::release(videoRender);
+  if (render != nullptr) {
+    lms::release(render);
   }
 
-  videoRender = lms::retain(render);
+  render = lms::retain(render);
 }
 
-class Coordinator : public FramesBufferDelegate, public PacketAcceptor, public DecoderDelegate {
+class Coordinator : public PacketAcceptor, public DecoderDelegate {
 public:
-  Coordinator(PassivePacketSource *source) {
-    this->source = lms::retain(source);
+  Coordinator(PassivePacketSource *source, Decoder *decoder, FramesBuffer *buffer) {
+    this->source  = lms::retain(source);
+    this->buffer  = lms::retain(buffer);
+    this->decoder = lms::retain(decoder);
   }
   
   ~Coordinator() {
+    lms::release(buffer);
+    lms::release(decoder);
     lms::release(source);
   }
   
-  /* from buffer */
-  void didTouchFrames(size_t framesStored) override {
-    int packetsToLoad = FramesExpected - (int)framesStored - packetsLoading - packetsDecoding;
+  void start() {
+    source->addPacketAcceptor(StreamIndexAny, this);
+    decoder->setDelegate(this);
+    
+    jobId = lms::dispatchAsyncPeriodically(mainQueue(), 33, [this] {
+      driveStreaming();
+    });
+  }
+  
+  void stop() {
+    lms::cancelPeriodicObj(jobId);
+    
+    decoder->setDelegate(nullptr);
+    source->removePacketAcceptor(this);
+  }
+  
+private:
+  void driveStreaming() {
+    buffer->squeezeFrame(0);
+    
+    int packetsToLoad = FramesExpected - buffer->numberOfFrames() - packetsLoading - packetsDecoding;
     
     // 保底缓存帧数，由于加载是需要时间的，所以如果一帧来了再去请求下一帧，就会退化成串行处理模式
     // 应对策略是使用一个保底帧数来使加载、解码、渲染成为并行流水线模式
@@ -66,6 +90,7 @@ public:
     source->loadPackets(packetsToLoad);
   }
   
+protected:
   /* from src */
   void didReceivePacket(void *packet) override {
     packetsLoading  -= 1;
@@ -83,6 +108,9 @@ public:
   
 private:
   PassivePacketSource *source;
+  Decoder             *decoder;
+  FramesBuffer        *buffer;
+  int jobId;
 
   const int FramesExpected = 10;
   int packetsLoading = 0;
@@ -92,47 +120,46 @@ private:
 void Player::play() {
   LMSLogInfo(nullptr);
 
-  if (src->open() != 0) {
+  if (source->open() != 0) {
     return;
   }
   
-  auto nbStreams = src->numberOfStreams();
+  auto nbStreams = source->numberOfStreams();
+  int  streamIndex = -1;
   for (int i = 0; i < nbStreams; i += 1) {
-    auto meta = src->streamMetaAt(i);
+    auto meta = source->streamMetaAt(i);
     auto st   = (AVStream *)meta["stream"];
     if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
-      videoDecoder = lms::createDecoder(meta);
-      src->addPacketAcceptor(i, videoDecoder);
+      streamIndex = i;
+      decoder = lms::createDecoder(meta);
       break;
     }
   }
 
-  if (videoDecoder == nullptr) {
+  if (decoder == nullptr) {
     return;
   }
   
-  
-  auto coordinator = new Coordinator(src);
-  autoRelease((Object *)coordinator);
-  
-  src->addPacketAcceptor(StreamIndexAny, coordinator);
-  videoDecoder->setDelegate(coordinator);
-  
-  videoFramesBuffer = new FramesBuffer;
-  videoFramesBuffer->setDelegate(coordinator);
-  videoDecoder->addFrameAcceptor(videoFramesBuffer);
+  buffer      = new FramesBuffer;
+  coordinator = new Coordinator(source, decoder, buffer);
 
-  videoDecoder->startDecoding();
-  videoRender->startRendering(videoDecoder->meta(), videoFramesBuffer);
+  source->addPacketAcceptor(streamIndex, decoder);
+  decoder->addFrameAcceptor(buffer);
+  buffer->addFrameAcceptor(render);
+
+  decoder->start();
+  render->start(decoder->meta());
+  coordinator->start();
 }
 
 void Player::stop() {
   LMSLogInfo("Stop playing");
-
-  src->removePacketAcceptor(videoDecoder);
-
-  videoDecoder->stopDecoding();
-  src->close();
+  
+  coordinator->stop();
+  decoder->stop();
+  source->close();
+  
+  source->removePacketAcceptor(decoder);
 }
 
 } // namespace lms

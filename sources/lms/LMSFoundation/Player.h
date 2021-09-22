@@ -8,6 +8,7 @@ class PassivePacketSource;
 class Decoder;
 class Render;
 class FramesBuffer;
+class Coordinator;
 
 class Player : virtual public Object {
 public:
@@ -19,10 +20,11 @@ public:
   void setVideoRender(Render *videoRender);
 
 private:
-  PassivePacketSource *src;
-  Decoder      *videoDecoder;
-  FramesBuffer *videoFramesBuffer;
-  Render       *videoRender;
+  PassivePacketSource *source;
+  Decoder      *decoder;
+  FramesBuffer *buffer;
+  Render       *render;
+  Coordinator  *coordinator;
 };
 
 }

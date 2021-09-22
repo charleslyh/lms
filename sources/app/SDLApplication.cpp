@@ -81,7 +81,7 @@ Uint32 periodicTimerProc(Uint32 interval, lms::Runnable *runnable) {
   return interval;
 }
 
-void SDL_ScheduleRunnable(int delayMS, lms::Runnable *runnable) {
+int SDL_ScheduleRunnable(int delayMS, lms::Runnable *runnable) {
   lms::retain(runnable);
-  SDL_AddTimer(delayMS, (SDL_TimerCallback)periodicTimerProc, runnable);
+  return SDL_AddTimer(delayMS, (SDL_TimerCallback)periodicTimerProc, runnable);
 }

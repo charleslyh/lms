@@ -117,7 +117,7 @@ void dispatchAsync(DispatchQueue *queue, ActionBlock block, void *context, void 
       this->data2   = data2;
     }
 
-    int run() override {
+    void run() override {
       block(context, data1, data2);
     }
 
@@ -133,24 +133,28 @@ void dispatchAsync(DispatchQueue *queue, ActionBlock block, void *context, void 
 
 class LambdaRunnable : public Runnable {
 public:
-  LambdaRunnable(std::function<int()> l)
+  LambdaRunnable(std::function<void()> l)
   : lambda(l) {
   }
 
-  int run() override {
-    return lambda();
+  void run() override {
+    lambda();
   }
 
 private:
-  std::function<int()> lambda;
+  std::function<void()> lambda;
 };
 
-void dispatchAsync(DispatchQueue *queue, std::function<int()> lambda) {
+void dispatchAsync(DispatchQueue *queue, std::function<void()> lambda) {
   queue->async(autoRelease(new LambdaRunnable(lambda)));
 }
 
-void dispatchAsyncPeriodically(DispatchQueue *queue, int delayMS, std::function<int()> lambda) {
-  queue->asyncPeriodically(delayMS, autoRelease(new LambdaRunnable(lambda)));
+PeriodicJobId dispatchAsyncPeriodically(DispatchQueue *queue, int delayMS, std::function<void()> lambda) {
+  return queue->asyncPeriodically(delayMS, autoRelease(new LambdaRunnable(lambda)));
+}
+
+void cancelPeriodicObj(PeriodicJobId jobId) {
+  
 }
 
 }
