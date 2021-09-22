@@ -28,11 +28,11 @@ Player::~Player() {
 }
 
 void Player::setVideoRender(Render *render) {
-  if (render != nullptr) {
-    lms::release(render);
+  if (this->render != nullptr) {
+    lms::release(this->render);
   }
 
-  render = lms::retain(render);
+  this->render = lms::retain(render);
 }
 
 class Coordinator : public PacketAcceptor, public DecoderDelegate {

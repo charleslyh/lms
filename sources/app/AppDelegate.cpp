@@ -171,6 +171,31 @@ private:
   lms::FramesBuffer *framesBuffer;
 };
 
+typedef struct {
+  float          fps;
+  lms::Runnable *runnable;
+} FPSTimer;
+
+static int fpsTimerFunc(FPSTimer *timer) {
+  const double delayPerFrame = 1.0 / timer->fps * 1000;
+  Uint32 beginning  = SDL_GetTicks();
+  Uint32 lastTickTS = beginning;
+  int tickIndex = 1;
+  
+  while(true) {
+    int delay = (int)beginning + (tickIndex * delayPerFrame) - (int)lastTickTS;
+    tickIndex += 1;
+
+    if (delay > 0) {
+      SDL_Delay(delay);
+      lastTickTS = SDL_GetTicks();
+
+      LMSLogInfo("Delayed: %u", delay);
+      timer->runnable->run();
+    }
+  }
+}
+
 class PlayerAppDelegate: public SDLAppDelegate, public lms::DispatchQueue {
 public:
   void didFinishLaunchingApplication(int argc, char **argv) override {
@@ -195,7 +220,10 @@ public:
   }
   
   int asyncPeriodically(int delay, lms::Runnable *runnable) override {
-    return SDL_ScheduleRunnable(delay, runnable);
+    lms::retain(runnable);
+    SDL_CreateThread((SDL_ThreadFunction)fpsTimerFunc, "FPSTimer", new FPSTimer{29.7, runnable});
+
+//    return SDL_ScheduleRunnable(delay, runnable);
   }
 
 private:
