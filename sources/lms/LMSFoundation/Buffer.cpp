@@ -17,7 +17,7 @@ void FramesBuffer::didReceiveFrame(Frame *frame) {
 void FramesBuffer::squeezeFrame(uint64_t pts) {
   Frame *frame = nullptr;
   if (cachedFrames.empty()) {
-    LMSLogInfo("No frames available!");
+    LMSLogDebug("No frames available!");
     return;
   }
   

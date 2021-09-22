@@ -13,6 +13,8 @@ extern "C" {
   #include <SDL2/SDL.h>
 }
 
+#include <cmath>
+
 
 class VideoFile : public lms::PassivePacketSource {
 public:
@@ -172,27 +174,44 @@ private:
 };
 
 typedef struct {
+  bool           shouldQuit;
   float          fps;
   lms::Runnable *runnable;
 } FPSTimer;
 
 static int fpsTimerFunc(FPSTimer *timer) {
   const double delayPerFrame = 1.0 / timer->fps * 1000;
-  Uint32 beginning  = SDL_GetTicks();
-  Uint32 lastTickTS = beginning;
-  int tickIndex = 1;
+  const Uint32 preDelay = (Uint32)(delayPerFrame * 0.2);
+  Uint32 begin  = SDL_GetTicks();
+  LMSLogDebug("begin: %u, delayPerFrame: %lf", begin, delayPerFrame);
   
-  while(true) {
-    int delay = (int)beginning + (tickIndex * delayPerFrame) - (int)lastTickTS;
-    tickIndex += 1;
+  while(!timer->shouldQuit) {
+    LMSLogVerbose("FPS timer callback on: %u", SDL_GetTicks());
 
-    if (delay > 0) {
-      SDL_Delay(delay);
-      lastTickTS = SDL_GetTicks();
+    timer->runnable->run();
+    
+    // 避免 runnable 执行过快（小于1ms)，导致下面的delay计算结果为0
+    // 从而进入短暂的忙循环
+    SDL_Delay(preDelay);
 
-      LMSLogInfo("Delayed: %u", delay);
-      timer->runnable->run();
-    }
+    Uint32 now = SDL_GetTicks();
+    double diff = (double)(now - begin) / delayPerFrame;
+    int delay = (int)((1.0 - diff + std::floor(diff)) * delayPerFrame);
+
+    Uint32 expectedBreakPoint = SDL_GetTicks() + delay;
+    do {
+      int diff = expectedBreakPoint - SDL_GetTicks();
+      
+      // 如果使用最小睡眠单位1ms不断重复，仍然会带来一定的CPU负载
+      // 所以如果预期时间较长时，可以睡眠相对长的时间段，减轻这种负载
+      if (diff > 10) {
+        SDL_Delay(5);
+      } else if (diff >= 5) {
+        SDL_Delay(3);
+      } else if (diff >= 1) {
+        SDL_Delay(1);
+      }
+    } while(SDL_GetTicks() < expectedBreakPoint);
   }
 }
 
@@ -221,9 +240,7 @@ public:
   
   int asyncPeriodically(int delay, lms::Runnable *runnable) override {
     lms::retain(runnable);
-    SDL_CreateThread((SDL_ThreadFunction)fpsTimerFunc, "FPSTimer", new FPSTimer{29.7, runnable});
-
-//    return SDL_ScheduleRunnable(delay, runnable);
+    SDL_CreateThread((SDL_ThreadFunction)fpsTimerFunc, "FPSTimer", new FPSTimer{false, 29.7, runnable});
   }
 
 private:
