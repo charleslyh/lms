@@ -1,5 +1,5 @@
 #include "LMSFoundation/Foundation.h"
-#include "LMSFoundation/PacketSource.h"
+#include "LMSFoundation/MediaSource.h"
 #include "LMSFoundation/Player.h"
 #include "LMSFoundation/Decoder.h"
 #include "LMSFoundation/Render.h"
@@ -16,7 +16,7 @@ extern "C" {
 #include <cmath>
 
 
-class VideoFile : public lms::PassivePacketSource {
+class VideoFile : public lms::PassiveMediaSource {
 public:
   VideoFile(const char *path) {
     LMSLogVerbose("path: %s", path);
@@ -37,10 +37,14 @@ public:
     return context->nb_streams;
   }
   
-  lms::Metadata streamMetaAt(int index) override {
+  lms::StreamMeta streamMetaAt(int index) override {
+    auto st = context->streams[index];
     return {
-      {"type",   (void *)"ffmpeg"},
-      {"stream", context->streams[index]},
+      "ffmpeg",
+      st,
+      index,
+      (lms::MediaType)st->codecpar->codec_type,
+      av_q2d(st->avg_frame_rate),
     };
   }
 
@@ -96,8 +100,8 @@ private:
 
 class SDLView : public lms::Render {
 protected:
-  void start(const lms::Metadata& codecMeta) override {
-    cc = (AVCodecContext *)codecMeta.at("codec_context");
+  void start(const lms::DecoderMeta& meta) override {
+    cc = (AVCodecContext *)meta.data;
     
     Uint32 renderFlags = SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE;
     renderer = SDL_CreateRenderer(mainWindow, -1, renderFlags);
@@ -130,7 +134,7 @@ protected:
     av_image_fill_arrays(yuv->data, yuv->linesize, buffer, AV_PIX_FMT_YUV420P, cc->width, cc->height, 32);
   }
   
-  void stopRendering() override {
+  void stop() override {
   }
   
 protected:
@@ -219,10 +223,10 @@ class PlayerAppDelegate: public SDLAppDelegate, public lms::DispatchQueue {
 public:
   void didFinishLaunchingApplication(int argc, char **argv) override {
     lms::init({this});
+    lms::setLogLevel(lms::LogLevelVerbose);
 
     auto src = lms::autoRelease(new VideoFile(argv[1]));
-    player = new lms::Player(src);
-    player->setVideoRender(lms::autoRelease(new SDLView));
+    player = new lms::Player(src, lms::autoRelease(new SDLView));
     player->play();
   }
 

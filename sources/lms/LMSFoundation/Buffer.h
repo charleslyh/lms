@@ -4,7 +4,7 @@
 
 namespace lms {
  
-class FramesBuffer : public FrameAcceptor, public FrameOutput {
+class FramesBuffer : public FrameAcceptor, public FrameSource {
 public:
   size_t numberOfFrames() const;
   void squeezeFrame(uint64_t pts);

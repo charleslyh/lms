@@ -11,13 +11,26 @@ namespace lms {
 class FFMDecoder : public Decoder {
 public:
   FFMDecoder(AVCodecParameters *codecParams) {
-    this->params = codecParams;
+    this->params       = codecParams;
+    
+    codec = avcodec_find_decoder(params->codec_id);
+    if (codec == nullptr) {
+      LMSLogError("Unsupported codec: %d", params->codec_id);
+      return;
+    }
+
+    codecContext = avcodec_alloc_context3(codec);
+    int rt = avcodec_parameters_to_context(codecContext, params);
+    if (rt != 0) {
+      LMSLogError("Couldn't copy codec context: %d", rt);
+      return;
+    }
   }
   
 protected:
   void start() override;
   void stop() override;
-  Metadata meta() override;
+  DecoderMeta meta() override;
   
 protected:
   void didReceivePacket(Packet *packet) override;
@@ -25,27 +38,13 @@ protected:
 private:
   AVCodecParameters *params;
   AVCodecContext    *codecContext;
+  AVCodec *codec;
 };
 
 void FFMDecoder::start() {
   LMSLogInfo("startDecoding");
-  
-  AVCodec *codec = nullptr;
-  codec = avcodec_find_decoder(params->codec_id);
-  if (codec == nullptr) {
-    LMSLogError("Unsupported codec: %d", params->codec_id);
-    return;
-  }
 
-  // retrieve codec context
-  codecContext = avcodec_alloc_context3(codec);
-  int rt = avcodec_parameters_to_context(codecContext, params);
-  if (rt != 0) {
-    LMSLogError("Couldn't copy codec context: %d", rt);
-    return;
-  }
-
-  rt = avcodec_open2(codecContext, codec, nullptr);
+  int rt = avcodec_open2(codecContext, codec, nullptr);
   if (rt != 0) {
     LMSLogError("Couldn't open codec: %d", rt);
     return;
@@ -54,11 +53,15 @@ void FFMDecoder::start() {
 
 void FFMDecoder::stop() {
   LMSLogInfo("stopDecoding");
+  avcodec_close(codecContext);
 }
 
-Metadata FFMDecoder::meta() {
+DecoderMeta FFMDecoder::meta() {
   return {
-    {"codec_context", (void*) codecContext},
+    "ffmpeg",
+    (void *)codecContext,
+    params->width,
+    params->height,
   };
 }
 
@@ -123,11 +126,11 @@ void Decoder::notifyDecoderEvent(Packet *packet, int type) {
   }
 }
 
-Decoder *createDecoder(const Metadata& meta) {
+Decoder *createDecoder(const StreamMeta& meta) {
   // 根据meta信息匹配一个可创建，且最合适的解码器
 
   // 为了测试，返回一个假的解码器
-  auto st = (AVStream *)meta.at("stream");
+  auto st = (AVStream *)meta.data;
   return new FFMDecoder(st->codecpar);
 }
 

@@ -1,5 +1,5 @@
 #include "LMSFoundation/Player.h"
-#include "LMSFoundation/PacketSource.h"
+#include "LMSFoundation/MediaSource.h"
 #include "LMSFoundation/Decoder.h"
 #include "LMSFoundation/Render.h"
 #include "LMSFoundation/Buffer.h"
@@ -8,65 +8,59 @@ extern "C" {
   #include <libavcodec/avcodec.h>
   #include <libavformat/avformat.h>
 }
-#include <cstdio>
-#include <cmath>
 
 namespace lms {
 
-Player::Player(PassivePacketSource *s) {
-  source = lms::retain(s);
-  decoder = nullptr;
-  render  = nullptr;
-  buffer = nullptr;
-}
-
-Player::~Player() {
-  lms::release(buffer);
-  lms::release(render);
-  lms::release(decoder);
-  lms::release(source);
-}
-
-void Player::setVideoRender(Render *render) {
-  if (this->render != nullptr) {
-    lms::release(this->render);
-  }
-
-  this->render = lms::retain(render);
-}
-
-class Coordinator : public PacketAcceptor, public DecoderDelegate {
+class VideoStream : public PacketAcceptor, public DecoderDelegate {
 public:
-  Coordinator(PassivePacketSource *source, Decoder *decoder, FramesBuffer *buffer) {
-    this->source  = lms::retain(source);
-    this->buffer  = lms::retain(buffer);
-    this->decoder = lms::retain(decoder);
+  VideoStream(PassiveMediaSource *source, StreamMeta meta, Render *render) {
+    this->meta        = meta;
+    this->source      = lms::retain(source);
+    this->decoder     = lms::createDecoder(meta);
+    this->render      = lms::retain(render);
+    this->buffer      = new FramesBuffer;
   }
   
-  ~Coordinator() {
-    lms::release(buffer);
-    lms::release(decoder);
+  ~VideoStream() {
     lms::release(source);
+    lms::release(decoder);
+    lms::release(buffer);
+    lms::release(render);
   }
-  
+
   void start() {
-    source->addPacketAcceptor(StreamIndexAny, this);
+    /*
+     依赖关系：
+     *source -> *codec -> buffer -> *render
+        ^          ^         ^
+        ----- coordinator ----
+     */
+    source->addPacketAcceptor(meta.streamId, decoder);
+    decoder->addFrameAcceptor(buffer);
+    buffer->addFrameAcceptor(render);
+
+    render->start(decoder->meta());
+    decoder->start();
+    
+    source->addPacketAcceptor(StreamIdAny, this);
     decoder->setDelegate(this);
     
-    jobId = lms::dispatchAsyncPeriodically(mainQueue(), 33, [this] {
-      driveStreaming();
+    lms::dispatchAsyncPeriodically(mainQueue(), meta.avg_fps, [this] {
+      drive();
     });
   }
   
   void stop() {
-    lms::cancelPeriodicObj(jobId);
-    
-    decoder->setDelegate(nullptr);
-    source->removePacketAcceptor(this);
+    decoder->stop();
+    render->stop();
+
+    buffer->removeFrameAcceptor(render);
+    decoder->removeFrameAcceptor(buffer);
+    source->removePacketAcceptor(decoder);
   }
   
 private:
-  void driveStreaming() {
+  void drive() {
     buffer->squeezeFrame(0);
     
     int packetsToLoad = FramesExpected - buffer->numberOfFrames() - packetsLoading - packetsDecoding;
@@ -92,74 +86,76 @@ private:
   
 protected:
   /* from src */
-  void didReceivePacket(void *packet) override {
+  void didReceivePacket(Packet *packet) override  {
     packetsLoading  -= 1;
   }
-
+  
   /* from ecoder */
-  void willStartDecodingPacket(void *packet) override {
+  void willStartDecodingPacket(Packet *packet) override {
     packetsDecoding += 1;
   }
-
+  
   /* from decoder */
-  void didFinishDecodingPacket(void *packet) override {
+  void didFinishDecodingPacket(Packet *packet) override {
     packetsDecoding -= 1;
   }
   
 private:
-  PassivePacketSource *source;
-  Decoder             *decoder;
-  FramesBuffer        *buffer;
-  int jobId;
-
+  StreamMeta meta;
+  PassiveMediaSource *source;
+  Decoder            *decoder;
+  FramesBuffer       *buffer;
+  Render             *render;
+  
   const int FramesExpected = 10;
   int packetsLoading = 0;
   int packetsDecoding = 0;
 };
 
+Player::Player(PassiveMediaSource *s, Render *vrender) {
+  this->source  = lms::retain(s);
+  this->vrender = lms::retain(vrender);
+  this->vstream = nullptr;
+}
+
+Player::~Player() {
+  lms::release(vstream);
+  lms::release(source);
+}
+
 void Player::play() {
   LMSLogInfo(nullptr);
 
+  /* 必须先加载source的数据才能获取当中的元信息 */
   if (source->open() != 0) {
     return;
   }
   
   auto nbStreams = source->numberOfStreams();
-  int  streamIndex = -1;
+  int  streamId = -1;
   for (int i = 0; i < nbStreams; i += 1) {
     auto meta = source->streamMetaAt(i);
-    auto st   = (AVStream *)meta["stream"];
-    if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
-      streamIndex = i;
-      decoder = lms::createDecoder(meta);
-      break;
+    if (meta.mediaType == MediaTypeVideo) {
+      vstream = new VideoStream(source, meta, vrender);
     }
   }
-
-  if (decoder == nullptr) {
+  
+  if (vstream == nullptr) {
+    LMSLogError("Failed creating video stream");
     return;
   }
   
-  buffer      = new FramesBuffer;
-  coordinator = new Coordinator(source, decoder, buffer);
-
-  source->addPacketAcceptor(streamIndex, decoder);
-  decoder->addFrameAcceptor(buffer);
-  buffer->addFrameAcceptor(render);
-
-  decoder->start();
-  render->start(decoder->meta());
-  coordinator->start();
+  vstream->start();
 }
 
 void Player::stop() {
-  LMSLogInfo("Stop playing");
+  LMSLogInfo(nullptr);
   
-  coordinator->stop();
-  decoder->stop();
+  if (vstream) {
+    vstream->stop();
+  }
+  
   source->close();
-  
-  source->removePacketAcceptor(decoder);
 }
 
 } // namespace lms

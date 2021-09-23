@@ -4,27 +4,22 @@
 
 namespace lms {
 
-class PassivePacketSource;
-class Decoder;
+class PassiveMediaSource;
+class VideoStream;
 class Render;
-class FramesBuffer;
-class Coordinator;
 
 class Player : virtual public Object {
 public:
-  Player(PassivePacketSource *src);
+  Player(PassiveMediaSource *src, Render *videoRender);
   ~Player();
   
   void play();
   void stop();
-  void setVideoRender(Render *videoRender);
 
 private:
-  PassivePacketSource *source;
-  Decoder      *decoder;
-  FramesBuffer *buffer;
-  Render       *render;
-  Coordinator  *coordinator;
+  PassiveMediaSource *source;
+  Render      *vrender;
+  VideoStream *vstream;
 };
 
 }

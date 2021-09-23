@@ -3,13 +3,12 @@
 
 namespace lms {
 
-
 size_t FramesBuffer::numberOfFrames() const {
   return cachedFrames.size();
 }
 
 void FramesBuffer::didReceiveFrame(Frame *frame) {
-  LMSLogVerbose("frame: %p", frame);
+  LMSLogVerbose("Frame: %p", frame);
   
   cachedFrames.push_back(frame);
 }
@@ -24,6 +23,7 @@ void FramesBuffer::squeezeFrame(uint64_t pts) {
   frame = cachedFrames.front();
   cachedFrames.pop_front();
 
+  LMSLogDebug("Frame: %p", frame);
   deliverFrame(frame);
 }
 

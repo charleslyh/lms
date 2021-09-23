@@ -89,7 +89,7 @@ public:
 };
 
 
-class FrameOutput : virtual public Object {
+class FrameSource : virtual public Object {
 public:
   void addFrameAcceptor(FrameAcceptor *acceptor) {
     if (acceptor == nullptr) {

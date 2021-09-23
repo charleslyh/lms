@@ -9,18 +9,18 @@ target_include_directories(LMSFoundation
 
 target_sources(LMSFoundation
   PRIVATE
-    Foundation.h
-    Foundation.cpp
-    PacketSource.h
-    PacketSource.cpp
-    Decoder.h
-    Decoder.cpp
-    Render.h
-    Render.cpp
-    Player.h
-    Player.cpp
-    Logger.h
-    Logger.cpp
-    Buffer.h
     Buffer.cpp
+    Buffer.h
+    Decoder.cpp
+    Decoder.h
+    Foundation.cpp
+    Foundation.h
+    Logger.cpp
+    Logger.h
+    MediaSource.cpp
+    MediaSource.h
+    Player.cpp
+    Player.h
+    Render.cpp
+    Render.h
 )
