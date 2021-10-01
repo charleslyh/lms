@@ -174,7 +174,6 @@ private:
   SDL_Renderer      *renderer = nullptr;
   SDL_Texture       *texture  = nullptr;
   SDL_Rect           rect;
-  lms::FramesBuffer *framesBuffer;
 };
 
 typedef struct {
@@ -204,15 +203,15 @@ static int fpsTimerFunc(FPSTimer *timer) {
 
     Uint32 expectedBreakPoint = SDL_GetTicks() + delay;
     do {
-      int diff = expectedBreakPoint - SDL_GetTicks();
+      delay = expectedBreakPoint - SDL_GetTicks();
       
       // 如果使用最小睡眠单位1ms不断重复，仍然会带来一定的CPU负载
       // 所以如果预期时间较长时，可以睡眠相对长的时间段，减轻这种负载
-      if (diff > 10) {
-        SDL_Delay(5);
-      } else if (diff >= 5) {
+      if (delay > 10) {
+        SDL_Delay(delay / 2);
+      } else if (delay >= 5) {
         SDL_Delay(3);
-      } else if (diff >= 1) {
+      } else if (delay >= 1) {
         SDL_Delay(1);
       }
     } while(SDL_GetTicks() < expectedBreakPoint);

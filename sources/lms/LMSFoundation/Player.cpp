@@ -11,9 +11,13 @@ extern "C" {
 
 namespace lms {
 
-class VideoStream : public PacketAcceptor, public DecoderDelegate {
+class AVSync : public FrameAcceptor, public FrameSource {
 public:
-  VideoStream(PassiveMediaSource *source, StreamMeta meta, Render *render) {
+};
+
+class Stream : public PacketAcceptor, public DecoderDelegate {
+public:
+  Stream(PassiveMediaSource *source, StreamMeta meta, Render *render) {
     this->meta        = meta;
     this->source      = lms::retain(source);
     this->decoder     = lms::createDecoder(meta);
@@ -21,7 +25,7 @@ public:
     this->buffer      = new FramesBuffer;
   }
   
-  ~VideoStream() {
+  ~Stream() {
     lms::release(source);
     lms::release(decoder);
     lms::release(buffer);
@@ -30,10 +34,9 @@ public:
 
   void start() {
     /*
-     依赖关系：
-     *source -> *codec -> buffer -> *render
-        ^          ^         ^
-        ----- coordinator ----
+     依赖关系：source -> codec -> buffer -> render
+                ^        ^        ^
+                └──── vstream ────┘
      */
     source->addPacketAcceptor(meta.streamId, decoder);
     decoder->addFrameAcceptor(buffer);
@@ -136,7 +139,7 @@ void Player::play() {
   for (int i = 0; i < nbStreams; i += 1) {
     auto meta = source->streamMetaAt(i);
     if (meta.mediaType == MediaTypeVideo) {
-      vstream = new VideoStream(source, meta, vrender);
+      vstream = new Stream(source, meta, vrender);
     }
   }
   

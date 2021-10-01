@@ -5,7 +5,7 @@
 namespace lms {
 
 class PassiveMediaSource;
-class VideoStream;
+class Stream;
 class Render;
 
 class Player : virtual public Object {
@@ -19,7 +19,7 @@ public:
 private:
   PassiveMediaSource *source;
   Render      *vrender;
-  VideoStream *vstream;
+  Stream *vstream;
 };
 
 }
