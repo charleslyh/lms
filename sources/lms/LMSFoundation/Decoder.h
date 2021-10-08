@@ -12,6 +12,7 @@ struct DecoderMeta {
   int         width;
   int         height;
   int         pixelFormat;
+  double      fps;
 };
 
 class DecoderDelegate : virtual public Object {

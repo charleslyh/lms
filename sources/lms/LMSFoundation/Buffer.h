@@ -6,13 +6,19 @@ namespace lms {
  
 class FramesBuffer : public FrameAcceptor, public FrameSource {
 public:
-  size_t numberOfFrames() const;
-  void squeezeFrame(uint64_t pts);
+  size_t numberOfCachedFrames() const;
+  size_t numberOfEmptySlots() const;
+  
+  bool squeezeFrame(uint64_t pts);
+
+protected:
+  void setIdealBufferingFrames(int maxBufferingFrames);
   
 protected:
   void didReceiveFrame(Frame *frame) override;
 
 private:
+  int idealBufferingFrames;
   std::list<Frame *> cachedFrames;
 };
 

@@ -24,7 +24,7 @@ struct StreamMeta {
   void       *data;
   StreamId    streamId;
   MediaType   mediaType;
-  double      avg_fps;
+  double      averageFPS;
 };
 
 class MediaSource;

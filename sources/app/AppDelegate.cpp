@@ -139,6 +139,11 @@ protected:
   
 protected:
   void didReceiveFrame(lms::Frame *frm) override {
+    if (sws_ctx == nullptr) {
+      LMSLogError("Render %p not started appropriately!", this);
+      return;
+    }
+      
     auto frame = (AVFrame *)frm;
     
     LMSLogVerbose("Start rendering frame: %p", frame);

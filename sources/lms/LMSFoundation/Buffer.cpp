@@ -3,8 +3,16 @@
 
 namespace lms {
 
-size_t FramesBuffer::numberOfFrames() const {
+void FramesBuffer::setIdealBufferingFrames(int idealBufferingFrames) {
+  this->idealBufferingFrames = idealBufferingFrames;
+}
+
+size_t FramesBuffer::numberOfCachedFrames() const {
   return cachedFrames.size();
+}
+
+size_t FramesBuffer::numberOfEmptySlots() const {
+  return idealBufferingFrames - numberOfCachedFrames();
 }
 
 void FramesBuffer::didReceiveFrame(Frame *frame) {
@@ -13,11 +21,11 @@ void FramesBuffer::didReceiveFrame(Frame *frame) {
   cachedFrames.push_back(frame);
 }
 
-void FramesBuffer::squeezeFrame(uint64_t pts) {
+bool FramesBuffer::squeezeFrame(uint64_t pts) {
   Frame *frame = nullptr;
   if (cachedFrames.empty()) {
     LMSLogDebug("No frames available!");
-    return;
+    return false;
   }
   
   frame = cachedFrames.front();
@@ -25,6 +33,8 @@ void FramesBuffer::squeezeFrame(uint64_t pts) {
 
   LMSLogDebug("Frame: %p", frame);
   deliverFrame(frame);
+  
+  return true;
 }
 
 }
