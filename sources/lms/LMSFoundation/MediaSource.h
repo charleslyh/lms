@@ -59,4 +59,9 @@ public:
   virtual void loadPackets(int numberRequested) = 0;
 };
 
+class Demuxer : virtual public Object {
+public:
+  
+};
+
 }

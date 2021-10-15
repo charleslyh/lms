@@ -122,4 +122,7 @@ private:
   std::list<FrameAcceptor *> acceptors;
 };
 
+
+void dumpBytes(uint8_t *data, int size, int bytesPerLine);
+
 }

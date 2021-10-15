@@ -157,4 +157,17 @@ void cancelPeriodicObj(PeriodicJobId jobId) {
   
 }
 
+void dumpBytes(uint8_t *data, int size, int bytesPerLine) {
+  for (int i = 0; i < size; ++i) {
+    printf("%02X ", data[i]);
+    if ((i + 1) % bytesPerLine == 0) {
+      printf("\n");
+    }
+  }
+
+  if (size % bytesPerLine != 0) {
+    printf("\n");
+  }
+}
+
 }

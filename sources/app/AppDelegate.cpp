@@ -74,27 +74,28 @@ public:
   void loadPackets(int numberRequested) override {
     LMSLogVerbose("numberRequested: %d", numberRequested);
     
-    dispatchAsync(lms::mainQueue(), [this, numberRequested] () {
+//    dispatchAsync(lms::mainQueue(), [this, numberRequested] () {
       int numberRemains = numberRequested;
       while(numberRemains > 0) {
-        AVPacket *packet = av_packet_alloc();
-            
-        int rt = av_read_frame(context, packet);
+//        AVPacket *pkt = av_packet_alloc();
+        int rt = av_read_frame(context, &sharedPacket);
         if (rt >= 0) {
-          deliverPacket(packet);
+          deliverPacket(&sharedPacket);
+          av_packet_unref(&sharedPacket);
         }
         
         numberRemains -= 1;
       }
       
-      return 0;
-    });
+//      return 0;
+//    });
   }
 
 private:
   char *path;
   AVFormatContext    *context;
   lms::DispatchQueue *queue;
+  AVPacket sharedPacket;
 };
 
 
@@ -227,7 +228,7 @@ class PlayerAppDelegate: public SDLAppDelegate, public lms::DispatchQueue {
 public:
   void didFinishLaunchingApplication(int argc, char **argv) override {
     lms::init({this});
-    lms::setLogLevel(lms::LogLevelVerbose);
+    lms::setLogLevel(lms::LogLevelInfo);
 
     auto src = lms::autoRelease(new VideoFile(argv[1]));
     player = new lms::Player(src, lms::autoRelease(new SDLView));

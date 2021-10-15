@@ -6,10 +6,18 @@
 #include "LMSFoundation/Logger.h"
 extern "C" {
   #include <libavcodec/avcodec.h>
+  #include "libavutil/avutil.h"
+  #include <libavutil/opt.h>
   #include <libavformat/avformat.h>
+  #include <libswscale/swscale.h>
+  #include <libswresample/swresample.h>
+  #include <libavutil/imgutils.h>
+  #include <SDL2/SDL.h>
 }
 
 namespace lms {
+
+static volatile int64_t relative_zero_ticks = -1;
 
 class RenderDriver;
 
@@ -33,6 +41,240 @@ protected:
   RenderDriverDelegate *delegate = nullptr;
 };
 
+
+class SDLSpeaker: public RenderDriver {
+public:
+  SDLSpeaker(uint64_t channel_layout, int sample_rate) {
+    this->mutex = SDL_CreateMutex();
+    this->cond  = SDL_CreateCond();
+    
+    SDL_AudioSpec request_specs, respond_specs;
+    request_specs.freq     = sample_rate;
+    request_specs.format   = AUDIO_F32SYS;
+    request_specs.channels = av_get_channel_layout_nb_channels(channel_layout);
+    request_specs.silence  = 0;
+    request_specs.samples  = 1024;
+    request_specs.callback = (SDL_AudioCallback) load_audio_data;
+    request_specs.userdata = this;
+    
+    SDL_AudioDeviceID speakerId = SDL_OpenAudioDevice(NULL,
+                                                      0,
+                                                      &request_specs,
+                                                      &respond_specs,
+                                                      SDL_AUDIO_ALLOW_FORMAT_CHANGE);
+
+    SDL_PauseAudioDevice(speakerId, 0);
+  }
+  
+protected:
+  void start(const lms::DecoderMeta &meta) override {
+  }
+  
+  void stop() override {
+  }
+  
+  void didReceiveFrame(Frame *frame) override {
+//    auto avfrm = (AVFrame *)frame;
+//    auto cpy = av_frame_clone(avfrm);
+    SDL_LockMutex(this->mutex);
+    {
+      frames.push_back((AVFrame *)frame);
+      SDL_CondSignal(this->cond);
+    }
+    SDL_UnlockMutex(this->mutex);
+  }
+  
+private:
+  static void load_audio_data(SDLSpeaker *self, Uint8 *data, int len) {
+    if (relative_zero_ticks < 0) {
+      relative_zero_ticks = SDL_GetTicks();
+    }
+    
+    memset(data, 0, len);
+
+    while(len > 0) {
+      AVFrame *frame = self->pop_frame();
+      if (frame->linesize[0] < len) {
+        continue;
+      }
+      
+//      static int index = 0;
+//      printf("Frame [%d]\n", index++);
+      int bytes_to_write = std::min(frame->linesize[0], len);
+      memcpy(data, frame->data, bytes_to_write);
+      
+//
+//      printf("[%d] len:%d, render audio: frame(%d) data[0]:%p, opaque:%p, linesize[0]:%d, btw:%d\n"
+//             , index++
+//             , len
+//             , frame->display_picture_number
+//             , frame->data[0]
+//             , frame->opaque
+//             , frame->linesize[0]
+//             , bytes_to_write);
+//      for (int i = 0; i < bytes_to_write; ++i) {
+//        printf("%02X ", data[i]);
+//        if ((i + 1) % 48 == 0) {
+//          printf("\n");
+//        }
+//      }
+//      printf("\n");
+
+      len -= bytes_to_write;
+      frame->linesize[0] -= bytes_to_write;
+      frame->opaque = ((uint8_t *)frame->opaque) + bytes_to_write;
+
+      // 如果frame中剩余了数据未消费，则重新放入待处理队列
+      if (frame->linesize[0] > 0) {
+        self->refill_frame(frame);
+      } else {
+//        av_freep(&frame->data[0]);
+//        av_frame_free(&frame);
+      }
+    }
+  }
+  
+  AVFrame *pop_frame() {
+    AVFrame *frame = nullptr;
+
+    SDL_LockMutex(mutex);
+
+    for (;;) {
+      if (frames.size() > 0) {
+        frame = frames.front();
+        frames.pop_front();
+        break;
+      } else {
+        // unlock mutex and wait for cond signal, then lock mutex again
+        SDL_CondWaitTimeout(this->cond, this->mutex, 10);
+      }
+    }
+
+    SDL_UnlockMutex(this->mutex);
+    
+    return frame;
+  }
+  
+  void refill_frame(AVFrame *frame) {
+    SDL_LockMutex(this->mutex);
+    {
+      frames.push_front(frame);
+    }
+    SDL_UnlockMutex(this->mutex);
+  }
+
+private:
+  SDL_mutex *mutex;
+  SDL_cond *cond;
+  std::list<AVFrame *> frames;
+};
+
+class Resampler: public FrameAcceptor, public FrameSource {};
+
+class AudioResampler: public Resampler {
+  AVStream *stream;
+  int out_channel_layout;
+  int out_sample_rate;
+  AVSampleFormat out_sample_format;
+
+public:
+  AudioResampler(const StreamMeta& meta) {
+    this->stream = (AVStream *)meta.data;
+    this->out_sample_format  = AV_SAMPLE_FMT_S16;
+    this->out_sample_rate    = stream->codecpar->sample_rate;
+    this->out_channel_layout = stream->codecpar->channel_layout;
+  }
+  
+public:
+  void didReceiveFrame(Frame *frame) override {
+    auto avfrm = av_frame_clone((AVFrame *)frame);
+
+    SwrContext *context = nullptr;
+    int ret = 0;
+    int64_t in_channel_layout  = stream->codecpar->channel_layout;
+    int in_nb_channels = stream->codecpar->channels;
+    int in_nb_samples = 0;
+    int out_linesize = 0;
+    int max_out_nb_samples = 0;
+    uint8_t **resampled_data = nullptr;
+    int resampled_data_size = 0;
+    int out_nb_channels = av_get_channel_layout_nb_channels(out_channel_layout);
+    
+    context = swr_alloc();
+    
+    // get input audio channels
+    bool channels_matches_layout = (in_nb_channels == av_get_channel_layout_nb_channels(in_channel_layout));
+    if (!channels_matches_layout) {
+      in_channel_layout = av_get_default_channel_layout(in_nb_channels);
+    }
+    
+    ret = av_opt_set_int(context, "in_channel_layout", in_channel_layout, 0);
+    ret = av_opt_set_int(context, "in_sample_rate",    stream->codecpar->sample_rate, 0);
+    ret = av_opt_set_sample_fmt(context, "in_sample_fmt", (enum AVSampleFormat)stream->codecpar->format, 0);
+
+    ret = av_opt_set_int(context, "out_channel_layout", out_channel_layout, 0);
+    ret = av_opt_set_int(context, "out_sample_rate", out_sample_rate, 0);
+    ret = av_opt_set_int(context, "out_sample_fmt", out_sample_format, 0);
+    
+    ret = swr_init(context);
+    
+    max_out_nb_samples = av_rescale_rnd(avfrm->nb_samples,
+                                        out_sample_rate,
+                                        avfrm->sample_rate,
+                                        AV_ROUND_UP);
+    
+    ret = av_samples_alloc_array_and_samples(&resampled_data,
+                                             &out_linesize,
+                                             out_nb_channels,
+                                             max_out_nb_samples,
+                                             out_sample_format,
+                                             0);
+    
+    if (!resampled_data) {
+      return;
+    }
+    
+    int64_t progressive_delay = swr_get_delay(context, avfrm->sample_rate) + avfrm->nb_samples;
+    int out_nb_samples = av_rescale_rnd(progressive_delay, out_sample_rate, avfrm->sample_rate, AV_ROUND_UP);
+    
+    if (out_nb_samples > max_out_nb_samples) {
+      av_free(resampled_data[0]);
+      
+      av_samples_alloc(resampled_data,
+                       &out_linesize,
+                       out_nb_channels,
+                       out_nb_samples,
+                       out_sample_format,
+                       1);
+    }
+
+    out_nb_samples = swr_convert(context, resampled_data, out_nb_samples, (const uint8_t **)avfrm->data, avfrm->nb_samples);
+    
+    resampled_data_size = av_samples_get_buffer_size(&out_linesize,
+                                                     out_nb_channels,
+                                                     out_nb_samples,
+                                                     out_sample_format,
+                                                     1);
+    
+    AVFrame *frame_resampled = av_frame_alloc();
+    frame_resampled->data[0] = (uint8_t *)av_malloc(resampled_data_size);
+    memcpy(frame_resampled->data[0], resampled_data[0], resampled_data_size);
+    frame_resampled->linesize[0] = resampled_data_size;
+    frame_resampled->opaque = frame_resampled->data[0];
+    frame_resampled->display_picture_number = avfrm->display_picture_number;
+    frame_resampled->pts = avfrm->pts;
+    frame_resampled->nb_samples = out_nb_samples;
+    frame_resampled->format = out_sample_format;
+    frame_resampled->sample_rate = out_sample_rate;
+    
+    av_freep(&resampled_data[0]);
+    av_freep(&resampled_data);
+    swr_free(&context);
+    
+    deliverFrame(frame_resampled);
+  }
+};
+
 class VideoRenderDriver : public RenderDriver {
 public:
   VideoRenderDriver(int maxBufferingFrames, Render *videoRender) {
@@ -47,13 +289,17 @@ public:
     
     lms::dispatchAsyncPeriodically(mainQueue(), meta.fps, [this] {
       if (delegate) {
-        delegate->willRunRenderLoop(this);
+        dispatchAsync(mainQueue(), [this] {
+          delegate->willRunRenderLoop(this);
+        });
       }
 
       bool frameDeliveried = squeezeFrame(0);
 
       if (delegate) {
-        delegate->didRunRenderLoop(this, frameDeliveried);
+        dispatchAsync(mainQueue(), [this, frameDeliveried] () {
+          delegate->didRunRenderLoop(this, frameDeliveried);
+        });
       }
     });
   }
@@ -72,15 +318,17 @@ private:
 
 class Stream : virtual public Object {
 public:
-  Stream(const StreamMeta& meta, PassiveMediaSource *source, Decoder *decoder, RenderDriver *renderDriver) {
+  Stream(const StreamMeta& meta, PassiveMediaSource *source, Decoder *decoder, Resampler *resampler, RenderDriver *renderDriver) {
     this->meta         = meta;
     this->source       = lms::retain(source);
     this->renderDriver = lms::retain(renderDriver);
+    this->resampler    = lms::retain(resampler);
     this->decoder      = lms::retain(decoder);
   }
   
   ~Stream() {
     lms::release(source);
+    lms::release(resampler);
     lms::release(decoder);
     lms::release(renderDriver);
   }
@@ -92,7 +340,13 @@ public:
                 └──── vstream ────┘
      */
     source->addPacketAcceptor(meta.streamId, decoder);
-    decoder->addFrameAcceptor(renderDriver);
+    
+    if (resampler) {
+      decoder->addFrameAcceptor(resampler);
+      resampler->addFrameAcceptor(renderDriver);
+    } else {
+      decoder->addFrameAcceptor(renderDriver);
+    }
 
     renderDriver->start(decoder->meta());
     decoder->start();
@@ -101,8 +355,14 @@ public:
   void stop() {
     decoder->stop();
     renderDriver->stop();
+    
+    if (resampler) {
+      decoder->removeFrameAcceptor(resampler);
+      resampler->removeFrameAcceptor(renderDriver);
+    } else {
+      decoder->removeFrameAcceptor(renderDriver);
+    }
 
-    decoder->removeFrameAcceptor(renderDriver);
     source->removePacketAcceptor(decoder);
   }
   
@@ -110,6 +370,7 @@ private:
   StreamMeta meta;
   PassiveMediaSource *source;
   Decoder            *decoder;
+  Resampler          *resampler;
   RenderDriver       *renderDriver;
 };
 
@@ -184,6 +445,44 @@ Player::~Player() {
   lms::release(source);
 }
 
+class Dumper: public RenderDriver {
+public:
+  void start(const DecoderMeta &meta) override {}
+  
+  void stop() override {}
+  
+  void didReceiveFrame(Frame *frm) override {
+    AVFrame *frame = (AVFrame *)frm;
+//    LMSLogInfo("Frame{fmt:%-5d, sz:%-6d, samples:%-4d, pts:%-10lld}"
+//           , frame->format
+//           , frame->linesize[0]
+//           , frame->nb_samples
+//           , frame->pts
+//           );
+//    static int index = 0;
+//    printf("[%d] linesize[0]:%d\n", index++, frame->linesize[0]);
+//
+//    for (int i = 0; i < frame->linesize[0]; ++i) {
+//      printf("%02X ", ((uint8_t *)frame->data)[i]);
+//      if ((i + 1) % 48 == 0) {
+//        printf("\n");
+//      }
+//    }
+//    printf("\n");
+  }
+};
+
+class SDLAudioSpeaker : public RenderDriver {
+public:
+  void start(const DecoderMeta &meta) override {
+  }
+  
+  void stop() override {
+  }
+  
+public:
+};
+
 void Player::play() {
   LMSLogInfo(nullptr);
 
@@ -197,31 +496,48 @@ void Player::play() {
   auto nbStreams = source->numberOfStreams();
   int  streamId = -1;
   for (int i = 0; i < nbStreams; i += 1) {
-    auto meta = source->streamMetaAt(i);
+    auto meta   = source->streamMetaAt(i);
+    auto stream = (AVStream *)meta.data;
+
     if (meta.mediaType == MediaTypeVideo) {
-      VideoRenderDriver *driver = lms::autoRelease(new VideoRenderDriver(10, vrender));
+      VideoRenderDriver *driver = autoRelease(new VideoRenderDriver(10, vrender));
       driver->setDelegate(coordinator);
 
-      Decoder *decoder = lms::autoRelease(lms::createDecoder(meta));
+      Decoder *decoder = autoRelease(createDecoder(meta));
       decoder->setDelegate(coordinator);
 
-      vstream = new Stream(meta, source, decoder, driver);
+      vstream = new Stream(meta, source, decoder, nullptr, driver);
+    } else if (meta.mediaType == MediaTypeAudio) {
+      Decoder *decoder = autoRelease(createDecoder(meta));
+      AudioResampler *resampler = autoRelease(new AudioResampler(meta));
+      Dumper *dumper = autoRelease(new Dumper);
+      
+      SDLSpeaker *speaker = new SDLSpeaker(stream->codecpar->channel_layout, stream->codecpar->sample_rate);
+
+      astream = new Stream(meta, source, decoder, nullptr, speaker);
     }
   }
   
-  if (vstream == nullptr) {
-    LMSLogError("Failed creating video stream");
+  if (vstream == nullptr && astream == nullptr) {
+    LMSLogError("Failed creating video & audio stream");
     return;
   }
   
-  vstream->start();
+//  vstream->start();
+  astream->start();
+  
+  source->loadPackets(20000);
 }
 
 void Player::stop() {
   LMSLogInfo(nullptr);
   
-  if (vstream) {
-    vstream->stop();
+  if (astream != nullptr) {
+    astream->stop();
+  }
+  
+  if (vstream != nullptr) {
+//    vstream->stop();
   }
   source->close();
 

@@ -18,7 +18,8 @@ size_t FramesBuffer::numberOfEmptySlots() const {
 void FramesBuffer::didReceiveFrame(Frame *frame) {
   LMSLogVerbose("Frame: %p", frame);
   
-  cachedFrames.push_back(frame);
+  auto avfrm  = av_frame_clone((AVFrame *)frame);
+  cachedFrames.push_back(avfrm);
 }
 
 bool FramesBuffer::squeezeFrame(uint64_t pts) {
