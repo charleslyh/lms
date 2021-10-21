@@ -77,7 +77,6 @@ public:
 //    dispatchAsync(lms::mainQueue(), [this, numberRequested] () {
       int numberRemains = numberRequested;
       while(numberRemains > 0) {
-//        AVPacket *pkt = av_packet_alloc();
         int rt = av_read_frame(context, &sharedPacket);
         if (rt >= 0) {
           deliverPacket(&sharedPacket);
@@ -146,8 +145,8 @@ protected:
     }
       
     auto frame = (AVFrame *)frm;
-    
-    LMSLogVerbose("Start rendering frame: %p", frame);
+       
+    LMSLogVerbose("Start rendering frame: %p (pts:%lld)", frame, frame->pts);
     rect.x = 0;
     rect.y = 0;
     rect.w = cc->width;
@@ -249,7 +248,7 @@ public:
   
   int asyncPeriodically(int delay, lms::Runnable *runnable) override {
     lms::retain(runnable);
-    SDL_CreateThread((SDL_ThreadFunction)fpsTimerFunc, "FPSTimer", new FPSTimer{false, 29.7, runnable});
+    SDL_CreateThread((SDL_ThreadFunction)fpsTimerFunc, "FPSTimer", new FPSTimer{false, 29.97, runnable});
   }
 
 private:

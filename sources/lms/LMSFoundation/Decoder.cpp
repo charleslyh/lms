@@ -76,7 +76,7 @@ void FFMDecoder::didReceivePacket(Packet *packet) {
     return;
   }
   
-  auto avpkt = av_packet_clone((AVPacket *)packet);
+  auto avpkt = (AVPacket *)packet;
   
 //  dispatchAsync(mainQueue(), [this, avpkt]() {
     notifyDecoderEvent(avpkt, 0);
@@ -97,15 +97,15 @@ void FFMDecoder::didReceivePacket(Packet *packet) {
         break;
       }
       
-      static int i = 0;
-
-      if (avpkt->stream_index == 1 && i < 10) {
-        printf("Frame:[%lld]\n", frame->pts);
-        dumpBytes(frame->data[0], frame->linesize[0], 48);
+      static int i = 1;
+      
+      if (avpkt->stream_index == 0) {
+        frame->pts = i;
         i += 1;
       }
-
+      
       deliverFrame(frame);
+      
       av_frame_unref(frame);
     }
     

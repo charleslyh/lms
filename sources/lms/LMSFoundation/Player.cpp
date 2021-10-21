@@ -17,8 +17,6 @@ extern "C" {
 
 namespace lms {
 
-static volatile int64_t relative_zero_ticks = -1;
-
 class RenderDriver;
 
 class RenderDriverDelegate : virtual public Object {
@@ -41,154 +39,27 @@ protected:
   RenderDriverDelegate *delegate = nullptr;
 };
 
-
-class SDLSpeaker: public RenderDriver {
-public:
-  SDLSpeaker(uint64_t channel_layout, int sample_rate) {
-    this->mutex = SDL_CreateMutex();
-    this->cond  = SDL_CreateCond();
-    
-    SDL_AudioSpec request_specs, respond_specs;
-    request_specs.freq     = sample_rate;
-    request_specs.format   = AUDIO_F32SYS;
-    request_specs.channels = av_get_channel_layout_nb_channels(channel_layout);
-    request_specs.silence  = 0;
-    request_specs.samples  = 1024;
-    request_specs.callback = (SDL_AudioCallback) load_audio_data;
-    request_specs.userdata = this;
-    
-    SDL_AudioDeviceID speakerId = SDL_OpenAudioDevice(NULL,
-                                                      0,
-                                                      &request_specs,
-                                                      &respond_specs,
-                                                      SDL_AUDIO_ALLOW_FORMAT_CHANGE);
-
-    SDL_PauseAudioDevice(speakerId, 0);
-  }
-  
-protected:
-  void start(const lms::DecoderMeta &meta) override {
-  }
-  
-  void stop() override {
-  }
-  
-  void didReceiveFrame(Frame *frame) override {
-//    auto avfrm = (AVFrame *)frame;
-//    auto cpy = av_frame_clone(avfrm);
-    SDL_LockMutex(this->mutex);
-    {
-      frames.push_back((AVFrame *)frame);
-      SDL_CondSignal(this->cond);
-    }
-    SDL_UnlockMutex(this->mutex);
-  }
-  
-private:
-  static void load_audio_data(SDLSpeaker *self, Uint8 *data, int len) {
-    if (relative_zero_ticks < 0) {
-      relative_zero_ticks = SDL_GetTicks();
-    }
-    
-    memset(data, 0, len);
-
-    while(len > 0) {
-      AVFrame *frame = self->pop_frame();
-      if (frame->linesize[0] < len) {
-        continue;
-      }
-      
-//      static int index = 0;
-//      printf("Frame [%d]\n", index++);
-      int bytes_to_write = std::min(frame->linesize[0], len);
-      memcpy(data, frame->data, bytes_to_write);
-      
-//
-//      printf("[%d] len:%d, render audio: frame(%d) data[0]:%p, opaque:%p, linesize[0]:%d, btw:%d\n"
-//             , index++
-//             , len
-//             , frame->display_picture_number
-//             , frame->data[0]
-//             , frame->opaque
-//             , frame->linesize[0]
-//             , bytes_to_write);
-//      for (int i = 0; i < bytes_to_write; ++i) {
-//        printf("%02X ", data[i]);
-//        if ((i + 1) % 48 == 0) {
-//          printf("\n");
-//        }
-//      }
-//      printf("\n");
-
-      len -= bytes_to_write;
-      frame->linesize[0] -= bytes_to_write;
-      frame->opaque = ((uint8_t *)frame->opaque) + bytes_to_write;
-
-      // 如果frame中剩余了数据未消费，则重新放入待处理队列
-      if (frame->linesize[0] > 0) {
-        self->refill_frame(frame);
-      } else {
-//        av_freep(&frame->data[0]);
-//        av_frame_free(&frame);
-      }
-    }
-  }
-  
-  AVFrame *pop_frame() {
-    AVFrame *frame = nullptr;
-
-    SDL_LockMutex(mutex);
-
-    for (;;) {
-      if (frames.size() > 0) {
-        frame = frames.front();
-        frames.pop_front();
-        break;
-      } else {
-        // unlock mutex and wait for cond signal, then lock mutex again
-        SDL_CondWaitTimeout(this->cond, this->mutex, 10);
-      }
-    }
-
-    SDL_UnlockMutex(this->mutex);
-    
-    return frame;
-  }
-  
-  void refill_frame(AVFrame *frame) {
-    SDL_LockMutex(this->mutex);
-    {
-      frames.push_front(frame);
-    }
-    SDL_UnlockMutex(this->mutex);
-  }
-
-private:
-  SDL_mutex *mutex;
-  SDL_cond *cond;
-  std::list<AVFrame *> frames;
-};
-
 class Resampler: public FrameAcceptor, public FrameSource {};
 
-class AudioResampler: public Resampler {
+
+class SDLAudioResampler: public Resampler {
   AVStream *stream;
   int out_channel_layout;
   int out_sample_rate;
   AVSampleFormat out_sample_format;
 
 public:
-  AudioResampler(const StreamMeta& meta) {
-    this->stream = (AVStream *)meta.data;
+  SDLAudioResampler(AVStream *stream, int out_channel_layout, int out_sample_rate) {
+    this->stream = stream;
     this->out_sample_format  = AV_SAMPLE_FMT_S16;
-    this->out_sample_rate    = stream->codecpar->sample_rate;
-    this->out_channel_layout = stream->codecpar->channel_layout;
+    this->out_sample_rate    = out_sample_rate;
+    this->out_channel_layout = out_channel_layout;
   }
   
 public:
   void didReceiveFrame(Frame *frame) override {
-    auto avfrm = av_frame_clone((AVFrame *)frame);
-
+    AVFrame *avfrm = (AVFrame *)frame;
+    
     SwrContext *context = nullptr;
     int ret = 0;
     int64_t in_channel_layout  = stream->codecpar->channel_layout;
@@ -196,7 +67,7 @@ public:
     int in_nb_samples = 0;
     int out_linesize = 0;
     int max_out_nb_samples = 0;
-    uint8_t **resampled_data = nullptr;
+    uint8_t **resampled_data = NULL;
     int resampled_data_size = 0;
     int out_nb_channels = av_get_channel_layout_nb_channels(out_channel_layout);
     
@@ -266,13 +137,121 @@ public:
     frame_resampled->nb_samples = out_nb_samples;
     frame_resampled->format = out_sample_format;
     frame_resampled->sample_rate = out_sample_rate;
-    
+
+    deliverFrame((Frame *)frame_resampled);
+
     av_freep(&resampled_data[0]);
     av_freep(&resampled_data);
     swr_free(&context);
-    
-    deliverFrame(frame_resampled);
   }
+};
+
+class SDLSpeaker: public RenderDriver {
+public:
+  SDLSpeaker(uint64_t channel_layout, int sample_rate) {
+    this->mutex = SDL_CreateMutex();
+    this->cond  = SDL_CreateCond();
+    
+    SDL_AudioSpec request_specs, respond_specs;
+    request_specs.freq     = sample_rate;
+    request_specs.format   = AUDIO_S16;
+    request_specs.channels = av_get_channel_layout_nb_channels(channel_layout);
+    request_specs.silence  = 0;
+    request_specs.samples  = 1024;
+    request_specs.callback = (SDL_AudioCallback) load_audio_data;
+    request_specs.userdata = this;
+    
+    SDL_AudioDeviceID speakerId = SDL_OpenAudioDevice(NULL,
+                                                      0,
+                                                      &request_specs,
+                                                      &respond_specs,
+                                                      SDL_AUDIO_ALLOW_FORMAT_CHANGE);
+
+    SDL_PauseAudioDevice(speakerId, 0);
+  }
+  
+protected:
+  void didReceiveFrame(Frame *frame) override {
+    SDL_LockMutex(this->mutex);
+    {
+      frames.push_back((AVFrame *)frame);
+      SDL_CondSignal(this->cond);
+    }
+    SDL_UnlockMutex(this->mutex);
+  }
+  
+  
+  
+private:
+  static void load_audio_data(SDLSpeaker *self, Uint8 *data, int len) {
+    memset(data, 0, len);
+
+    while(len > 0) {
+      AVFrame *frame = self->pop_frame();
+      if (frame->linesize[0] < len) {
+        continue;
+      }
+      
+      int bytes_to_write = std::min(frame->linesize[0], len);
+      memcpy(data, frame->opaque, bytes_to_write);
+      
+              
+      len -= bytes_to_write;
+      frame->linesize[0] -= bytes_to_write;
+      frame->opaque = ((uint8_t *)frame->opaque) + bytes_to_write;
+
+      // 如果frame中剩余了数据未消费，则重新放入待处理队列
+      if (frame->linesize[0] > 0) {
+        self->refill_frame(frame);
+      } else {
+        av_freep(&frame->data[0]);
+        av_frame_free(&frame);
+      }
+    }
+  }
+  
+  AVFrame *pop_frame() {
+    AVFrame *frame = nullptr;
+
+    SDL_LockMutex(mutex);
+
+    for (;;) {
+      if (frames.size() > 0) {
+        frame = frames.front();
+        frames.pop_front();
+        LMSLogWarning("Audio popped");
+        break;
+      } else {
+        // unlock mutex and wait for cond signal, then lock mutex again
+        LMSLogWarning("Not enough audio data!");
+        SDL_CondWaitTimeout(this->cond, this->mutex, 10);
+      }
+    }
+
+    SDL_UnlockMutex(this->mutex);
+    
+    return frame;
+  }
+  
+  void refill_frame(AVFrame *frame) {
+    SDL_LockMutex(this->mutex);
+    {
+      frames.push_front(frame);
+    }
+    SDL_UnlockMutex(this->mutex);
+  }
+
+private:
+  SDL_mutex *mutex;
+  SDL_cond *cond;
+  std::list<AVFrame *> frames;
+
+  void start(const lms::DecoderMeta &meta) override {
+  }
+  
+  void stop() override {
+  }
+  
 };
 
 class VideoRenderDriver : public RenderDriver {
@@ -407,7 +386,7 @@ public:
     // 应对策略是使用一个保底帧数来尽可能平衡数据加载、解码的速度刚好和渲染的消耗速度相匹配，从而成为并行流水线模式。
     // 如果该调整值过大，会导致缓存的帧数始终大于RenderDriver的理想缓存帧数。
     // 否则，如果该调整值过小，则无法解决退化为穿行处理模式的问题
-    const int NumberOfFramesOffsetForLoadingCost = 5;
+    const int NumberOfFramesOffsetForLoadingCost = 100;
     packetsToLoad += NumberOfFramesOffsetForLoadingCost;
     
     // 如果一个packet中包含较多的帧，则可能导致framesCached较大。进而使得packetsToLoad为负数
@@ -445,44 +424,6 @@ Player::~Player() {
   lms::release(source);
 }
 
-class Dumper: public RenderDriver {
-public:
-  void start(const DecoderMeta &meta) override {}
-  
-  void stop() override {}
-  
-  void didReceiveFrame(Frame *frm) override {
-    AVFrame *frame = (AVFrame *)frm;
-//    LMSLogInfo("Frame{fmt:%-5d, sz:%-6d, samples:%-4d, pts:%-10lld}"
-//           , frame->format
-//           , frame->linesize[0]
-//           , frame->nb_samples
-//           , frame->pts
-//           );
-//    static int index = 0;
-//    printf("[%d] linesize[0]:%d\n", index++, frame->linesize[0]);
-//
-//    for (int i = 0; i < frame->linesize[0]; ++i) {
-//      printf("%02X ", ((uint8_t *)frame->data)[i]);
-//      if ((i + 1) % 48 == 0) {
-//        printf("\n");
-//      }
-//    }
-//    printf("\n");
-  }
-};
-
-class SDLAudioSpeaker : public RenderDriver {
-public:
-  void start(const DecoderMeta &meta) override {
-  }
-  
-  void stop() override {
-  }
-  
-public:
-};
-
 void Player::play() {
   LMSLogInfo(nullptr);
 
@@ -509,12 +450,9 @@ void Player::play() {
       vstream = new Stream(meta, source, decoder, nullptr, driver);
     } else if (meta.mediaType == MediaTypeAudio) {
       Decoder *decoder = autoRelease(createDecoder(meta));
-      AudioResampler *resampler = autoRelease(new AudioResampler(meta));
-      Dumper *dumper = autoRelease(new Dumper);
-      
+      SDLAudioResampler *resampler = autoRelease(new SDLAudioResampler(stream, stream->codecpar->channel_layout, stream->codecpar->sample_rate));
       SDLSpeaker *speaker = new SDLSpeaker(stream->codecpar->channel_layout, stream->codecpar->sample_rate);
-
-      astream = new Stream(meta, source, decoder, nullptr, speaker);
+      astream = new Stream(meta, source, decoder, resampler, speaker);
     }
   }
   
@@ -523,10 +461,10 @@ void Player::play() {
     return;
   }
   
-//  vstream->start();
+//  source->loadPackets(100);
+    
+  vstream->start();
   astream->start();
-  
-  source->loadPackets(20000);
 }
 
 void Player::stop() {
@@ -537,7 +475,7 @@ void Player::stop() {
   }
   
   if (vstream != nullptr) {
-//    vstream->stop();
+    vstream->stop();
   }
   source->close();
 
