@@ -100,8 +100,9 @@ private:
 
 class SDLView : public lms::Render {
 protected:
-  void start(const lms::DecoderMeta& meta) override {
-    cc = (AVCodecContext *)meta.data;
+  void start(const lms::StreamMeta& meta) override {
+    this->st = (AVStream *)meta.data;
+    auto par = st->codecpar;
     
     Uint32 renderFlags = SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE;
     renderer = SDL_CreateRenderer(mainWindow, -1, renderFlags);
@@ -109,14 +110,14 @@ protected:
     texture = SDL_CreateTexture(renderer,
                                 SDL_PIXELFORMAT_YV12,
                                 SDL_TEXTUREACCESS_STREAMING,
-                                cc->width,
-                                cc->height);
+                                par->width,
+                                par->height);
     
-    sws_ctx = sws_getContext(cc->width,
-                             cc->height,
-                             cc->pix_fmt,
-                             cc->width,
-                             cc->height,
+    sws_ctx = sws_getContext(par->width,
+                             par->height,
+                             (AVPixelFormat)par->format,
+                             par->width,
+                             par->height,
                              AV_PIX_FMT_YUV420P,
                              SWS_BILINEAR,
                              NULL,
@@ -124,14 +125,14 @@ protected:
                              NULL);
     
     int numBytes = av_image_get_buffer_size(AV_PIX_FMT_YUV420P,
-                                            cc->width,
-                                            cc->height,
+                                            par->width,
+                                            par->height,
                                             32);
     
     buffer = (uint8_t *)av_malloc(numBytes * sizeof(uint8_t));
     
     yuv = av_frame_alloc();
-    av_image_fill_arrays(yuv->data, yuv->linesize, buffer, AV_PIX_FMT_YUV420P, cc->width, cc->height, 32);
+    av_image_fill_arrays(yuv->data, yuv->linesize, buffer, AV_PIX_FMT_YUV420P, par->width, par->height, 32);
   }
   
   void stop() override {
@@ -149,14 +150,14 @@ protected:
     LMSLogVerbose("Start rendering frame: %p (pts:%lld)", frame, frame->pts);
     rect.x = 0;
     rect.y = 0;
-    rect.w = cc->width;
-    rect.h = cc->height;
+    rect.w = st->codecpar->width;
+    rect.h = st->codecpar->height;
 
     sws_scale(sws_ctx,
               (uint8_t const *const *)frame->data,
               frame->linesize,
               0,
-              cc->height,
+              st->codecpar->height,
               yuv->data,
               yuv->linesize);
 
@@ -172,7 +173,7 @@ protected:
   }
   
 private:
-  AVCodecContext    *cc;
+  AVStream *st;
   struct SwsContext *sws_ctx  = nullptr;
   uint8_t           *buffer   = nullptr;
   AVFrame           *yuv      = nullptr;
@@ -183,12 +184,12 @@ private:
 
 typedef struct {
   bool           shouldQuit;
-  float          fps;
+  double         period;
   lms::Runnable *runnable;
 } FPSTimer;
 
 static int fpsTimerFunc(FPSTimer *timer) {
-  const double delayPerFrame = 1.0 / timer->fps * 1000;
+  const double delayPerFrame = 1.0 / timer->period * 1000;
   const Uint32 preDelay = (Uint32)(delayPerFrame * 0.2);
   Uint32 begin  = SDL_GetTicks();
   LMSLogDebug("begin: %u, delayPerFrame: %lf", begin, delayPerFrame);
@@ -227,7 +228,7 @@ class PlayerAppDelegate: public SDLAppDelegate, public lms::DispatchQueue {
 public:
   void didFinishLaunchingApplication(int argc, char **argv) override {
     lms::init({this});
-    lms::setLogLevel(lms::LogLevelInfo);
+    lms::setLogLevel(lms::LogLevelVerbose);
 
     auto src = lms::autoRelease(new VideoFile(argv[1]));
     player = new lms::Player(src, lms::autoRelease(new SDLView));
@@ -246,9 +247,9 @@ public:
     SDL_DispatchRunnable(runnable);
   }
   
-  int asyncPeriodically(int delay, lms::Runnable *runnable) override {
+  int asyncPeriodically(double period, lms::Runnable *runnable) override {
     lms::retain(runnable);
-    SDL_CreateThread((SDL_ThreadFunction)fpsTimerFunc, "FPSTimer", new FPSTimer{false, 29.97, runnable});
+    SDL_CreateThread((SDL_ThreadFunction)fpsTimerFunc, "FPSTimer", new FPSTimer{false, period, runnable});
   }
 
 private:

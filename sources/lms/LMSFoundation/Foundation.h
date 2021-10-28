@@ -52,7 +52,7 @@ public:
 class DispatchQueue : virtual public Object {
 public:
   virtual void async(Runnable *runnable) = 0;
-  virtual int asyncPeriodically(int delayMs, Runnable *runnable) = 0;
+  virtual int asyncPeriodically(double period, Runnable *runnable) = 0;
 };
 
 
@@ -72,7 +72,7 @@ void dispatchAsync(DispatchQueue *queue, std::function<void()> lambda);
 
 typedef int PeriodicJobId;
 
-PeriodicJobId dispatchAsyncPeriodically(DispatchQueue *queue, int delayMS, std::function<void()> lambda);
+PeriodicJobId dispatchAsyncPeriodically(DispatchQueue *queue, double period, std::function<void()> lambda);
 void cancelPeriodicObj(PeriodicJobId jobId);
 
 DispatchQueue *mainQueue();

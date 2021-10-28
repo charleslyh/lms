@@ -4,7 +4,7 @@
 
 namespace lms {
 
-class DecoderMeta;
+class StreamMeta;
 
 class RenderDelegate : virtual public Object {
 public:
@@ -17,7 +17,7 @@ public:
 
   // TODO: VideoRender是否应该和Codec概念进行解耦？这意味着sartRendering接口不应该有codecMeta的概念
   // TODO: Render应该只做单纯的渲染工作，对buffer应该是无感知的
-  virtual void start(const DecoderMeta& decoderMeta) = 0;
+  virtual void start(const StreamMeta& meta) = 0;
   virtual void stop() = 0;
 
 protected:

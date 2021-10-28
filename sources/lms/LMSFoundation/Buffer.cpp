@@ -32,7 +32,7 @@ bool FramesBuffer::squeezeFrame(uint64_t pts) {
   frame = cachedFrames.front();
   cachedFrames.pop_front();
 
-  LMSLogDebug("Frame: %p", frame);
+  LMSLogDebug("Frame popped, remains: %lu", cachedFrames.size());
   deliverFrame(frame);
   
   return true;

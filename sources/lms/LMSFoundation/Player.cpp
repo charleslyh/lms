@@ -27,7 +27,7 @@ public:
 
 class RenderDriver : public FramesBuffer {
 public:
-  virtual void start(const DecoderMeta& meta) = 0;
+  virtual void start(const StreamMeta& meta) = 0;
   virtual void stop() = 0;
   
   void setDelegate(RenderDriverDelegate *delegate) {
@@ -49,13 +49,13 @@ class SDLAudioResampler: public Resampler {
   AVSampleFormat out_sample_format;
 
 public:
-  SDLAudioResampler(AVStream *stream, int out_channel_layout, int out_sample_rate) {
+  SDLAudioResampler(AVStream *stream) {
     this->stream = stream;
     this->out_sample_format  = AV_SAMPLE_FMT_S16;
-    this->out_sample_rate    = out_sample_rate;
-    this->out_channel_layout = out_channel_layout;
+    this->out_sample_rate    = stream->codecpar->sample_rate;
+    this->out_channel_layout = stream->codecpar->channel_layout;
   }
-  
+
 public:
   void didReceiveFrame(Frame *frame) override {
     AVFrame *avfrm = (AVFrame *)frame;
@@ -148,14 +148,14 @@ public:
 
 class SDLSpeaker: public RenderDriver {
 public:
-  SDLSpeaker(uint64_t channel_layout, int sample_rate) {
+  SDLSpeaker(AVStream *stream) {
     this->mutex = SDL_CreateMutex();
     this->cond  = SDL_CreateCond();
     
     SDL_AudioSpec request_specs, respond_specs;
-    request_specs.freq     = sample_rate;
+    request_specs.freq     = stream->codecpar->sample_rate;
     request_specs.format   = AUDIO_S16;
-    request_specs.channels = av_get_channel_layout_nb_channels(channel_layout);
+    request_specs.channels = av_get_channel_layout_nb_channels(stream->codecpar->channel_layout);
     request_specs.silence  = 0;
     request_specs.samples  = 1024;
     request_specs.callback = (SDL_AudioCallback) load_audio_data;
@@ -188,6 +188,9 @@ private:
 
     while(len > 0) {
       AVFrame *frame = self->pop_frame();
+      
+      LMSLogVerbose("Audio frame timestamp: %lu", frame->pts);
+      
       if (frame->linesize[0] < len) {
         continue;
       }
@@ -219,7 +222,7 @@ private:
       if (frames.size() > 0) {
         frame = frames.front();
         frames.pop_front();
-        LMSLogWarning("Audio popped");
+        LMSLogWarning("Audio popped, remains: %lu", frames.size());
         break;
       } else {
         // unlock mutex and wait for cond signal, then lock mutex again
@@ -246,7 +249,7 @@ private:
   SDL_cond *cond;
   std::list<AVFrame *> frames;
 
-  void start(const lms::DecoderMeta &meta) override {
+  void start(const StreamMeta &meta) override {
   }
   
   void stop() override {
@@ -261,12 +264,15 @@ public:
     this->render = videoRender;
   }
   
-  void start(const DecoderMeta& meta) override {
+  void start(const StreamMeta& meta) override {
     addFrameAcceptor(render);
     
     render->start(meta);
     
-    lms::dispatchAsyncPeriodically(mainQueue(), meta.fps, [this] {
+    auto stream = (AVStream *)meta.data;
+    double fps = av_q2d(stream->avg_frame_rate);
+    
+    lms::dispatchAsyncPeriodically(mainQueue(), fps, [this] {
       if (delegate) {
         dispatchAsync(mainQueue(), [this] {
           delegate->willRunRenderLoop(this);
@@ -327,7 +333,7 @@ public:
       decoder->addFrameAcceptor(renderDriver);
     }
 
-    renderDriver->start(decoder->meta());
+    renderDriver->start(meta);
     decoder->start();
   }
   
@@ -386,7 +392,7 @@ public:
     // 应对策略是使用一个保底帧数来尽可能平衡数据加载、解码的速度刚好和渲染的消耗速度相匹配，从而成为并行流水线模式。
     // 如果该调整值过大，会导致缓存的帧数始终大于RenderDriver的理想缓存帧数。
     // 否则，如果该调整值过小，则无法解决退化为穿行处理模式的问题
-    const int NumberOfFramesOffsetForLoadingCost = 100;
+    const int NumberOfFramesOffsetForLoadingCost = 5;
     packetsToLoad += NumberOfFramesOffsetForLoadingCost;
     
     // 如果一个packet中包含较多的帧，则可能导致framesCached较大。进而使得packetsToLoad为负数
@@ -450,8 +456,8 @@ void Player::play() {
       vstream = new Stream(meta, source, decoder, nullptr, driver);
     } else if (meta.mediaType == MediaTypeAudio) {
       Decoder *decoder = autoRelease(createDecoder(meta));
-      SDLAudioResampler *resampler = autoRelease(new SDLAudioResampler(stream, stream->codecpar->channel_layout, stream->codecpar->sample_rate));
-      SDLSpeaker *speaker = new SDLSpeaker(stream->codecpar->channel_layout, stream->codecpar->sample_rate);
+      SDLAudioResampler *resampler = autoRelease(new SDLAudioResampler(stream));
+      SDLSpeaker *speaker = new SDLSpeaker(stream);
       astream = new Stream(meta, source, decoder, resampler, speaker);
     }
   }
@@ -461,10 +467,10 @@ void Player::play() {
     return;
   }
   
-//  source->loadPackets(100);
-    
   vstream->start();
   astream->start();
+
+  source->loadPackets(100);
 }
 
 void Player::stop() {

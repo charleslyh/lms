@@ -149,8 +149,8 @@ void dispatchAsync(DispatchQueue *queue, std::function<void()> lambda) {
   queue->async(autoRelease(new LambdaRunnable(lambda)));
 }
 
-PeriodicJobId dispatchAsyncPeriodically(DispatchQueue *queue, int delayMS, std::function<void()> lambda) {
-  return queue->asyncPeriodically(delayMS, autoRelease(new LambdaRunnable(lambda)));
+PeriodicJobId dispatchAsyncPeriodically(DispatchQueue *queue, double period, std::function<void()> lambda) {
+  return queue->asyncPeriodically(period, autoRelease(new LambdaRunnable(lambda)));
 }
 
 void cancelPeriodicObj(PeriodicJobId jobId) {
