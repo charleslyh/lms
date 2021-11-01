@@ -10,6 +10,9 @@ public:
   size_t numberOfEmptySlots() const;
   
   bool squeezeFrame(uint64_t pts);
+  
+  Frame* popFrame();
+  void refillFrame(Frame *frame);
 
 protected:
   void setIdealBufferingFrames(int maxBufferingFrames);

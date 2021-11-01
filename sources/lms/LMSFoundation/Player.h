@@ -8,6 +8,7 @@ class PassiveMediaSource;
 class Stream;
 class Coordinator;
 class Render;
+class TimeSync;
 
 class Player : virtual public Object {
 public:
@@ -25,6 +26,7 @@ private:
   Coordinator *coordinator;
 
   Stream *astream;
+  TimeSync *timeSync;
 };
 
 }

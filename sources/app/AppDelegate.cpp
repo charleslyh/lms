@@ -146,8 +146,10 @@ protected:
     }
       
     auto frame = (AVFrame *)frm;
+    
+    double ts = frame->best_effort_timestamp * av_q2d(st->time_base);
        
-    LMSLogVerbose("Start rendering frame: %p (pts:%lld)", frame, frame->pts);
+    LMSLogVerbose("Start rendering video frame | ts:%.2lf, pts:%lld", ts, frame->pts);
     rect.x = 0;
     rect.y = 0;
     rect.w = st->codecpar->width;

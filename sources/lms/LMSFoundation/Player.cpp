@@ -17,12 +17,35 @@ extern "C" {
 
 namespace lms {
 
+class TimeSync : virtual public Object {
+public:
+  TimeSync() {
+    timePivot  = 0;
+    tickPivot = 0;
+  }
+  
+  double getPlayingTime() const {
+    uint32_t ticksPassed = SDL_GetTicks() - tickPivot;
+    double secondsPassed = (double)ticksPassed / 1000.0;
+    return timePivot + secondsPassed;
+  }
+  
+  void updateTimePivot(double time) {
+    timePivot  = time;
+    tickPivot = SDL_GetTicks();
+  }
+  
+private:
+  double   timePivot;
+  uint64_t tickPivot;
+};
+
 class RenderDriver;
 
 class RenderDriverDelegate : virtual public Object {
 public:
-  virtual void willRunRenderLoop(RenderDriver *driver) {}
-  virtual void didRunRenderLoop(RenderDriver *driver, bool didRenderFrame) {}
+  virtual void willRunRenderLoop(RenderDriver *driver, uint64_t frameIndex) {}
+  virtual void didRunRenderLoop(RenderDriver *driver, uint64_t frameIndex) {}
 };
 
 class RenderDriver : public FramesBuffer {
@@ -147,10 +170,18 @@ public:
 };
 
 class SDLSpeaker: public RenderDriver {
+  typedef struct {
+    AVFrame *frame;
+    uint8_t *rptr;
+    int      remainBytes;
+  } AudioFrameItem;
+  
 public:
-  SDLSpeaker(AVStream *stream) {
-    this->mutex = SDL_CreateMutex();
-    this->cond  = SDL_CreateCond();
+  SDLSpeaker(AVStream *stream, TimeSync *timeSync) {
+    this->stream   = stream;
+    this->timeSync = timeSync;
+    this->mutex  = SDL_CreateMutex();
+    this->cond   = SDL_CreateCond();
     
     SDL_AudioSpec request_specs, respond_specs;
     request_specs.freq     = stream->codecpar->sample_rate;
@@ -158,7 +189,7 @@ public:
     request_specs.channels = av_get_channel_layout_nb_channels(stream->codecpar->channel_layout);
     request_specs.silence  = 0;
     request_specs.samples  = 1024;
-    request_specs.callback = (SDL_AudioCallback) load_audio_data;
+    request_specs.callback = (SDL_AudioCallback) loadAudioData;
     request_specs.userdata = this;
     
     SDL_AudioDeviceID speakerId = SDL_OpenAudioDevice(NULL,
@@ -172,82 +203,84 @@ public:
   
 protected:
   void didReceiveFrame(Frame *frame) override {
-    SDL_LockMutex(this->mutex);
-    {
-      frames.push_back((AVFrame *)frame);
-      SDL_CondSignal(this->cond);
-    }
-    SDL_UnlockMutex(this->mutex);
+    auto avfrm = (AVFrame *)frame;
+    AudioFrameItem *afi = new AudioFrameItem { avfrm, avfrm->data[0], avfrm->linesize[0] };
+    pushFrame(afi);
   }
   
-  
-  
 private:
-  static void load_audio_data(SDLSpeaker *self, Uint8 *data, int len) {
+  static void loadAudioData(SDLSpeaker *self, Uint8 *data, int len) {
     memset(data, 0, len);
 
     while(len > 0) {
-      AVFrame *frame = self->pop_frame();
-      
-      LMSLogVerbose("Audio frame timestamp: %lu", frame->pts);
-      
-      if (frame->linesize[0] < len) {
-        continue;
+      AudioFrameItem *afi = self->popFrame();
+      if (afi == nullptr) {
+        break;
       }
       
-      int bytes_to_write = std::min(frame->linesize[0], len);
-      memcpy(data, frame->opaque, bytes_to_write);
+      AVFrame *frame = afi->frame;
+      double ts = frame->pts * av_q2d(self->stream->time_base);
+      
+      self->timeSync->updateTimePivot(ts);
+
+      LMSLogVerbose("Start rendering audio frame | ts:%.2lf, pts:%llu", ts, frame->pts);
+      
+      int bytesToWrite = std::min(afi->remainBytes, len);
+      memcpy(data, afi->rptr, bytesToWrite);
       
               
-      len -= bytes_to_write;
-      frame->linesize[0] -= bytes_to_write;
-      frame->opaque = ((uint8_t *)frame->opaque) + bytes_to_write;
+      len -= bytesToWrite;
+      afi->remainBytes -= bytesToWrite;
+      afi->rptr += bytesToWrite;
 
       // 如果frame中剩余了数据未消费，则重新放入待处理队列
-      if (frame->linesize[0] > 0) {
-        self->refill_frame(frame);
+      if (afi->remainBytes > 0) {
+        self->refillFrame(afi);
       } else {
         av_freep(&frame->data[0]);
         av_frame_free(&frame);
+        delete afi;
       }
     }
   }
   
-  AVFrame *pop_frame() {
-    AVFrame *frame = nullptr;
-
-    SDL_LockMutex(mutex);
-
-    for (;;) {
-      if (frames.size() > 0) {
-        frame = frames.front();
-        frames.pop_front();
-        LMSLogWarning("Audio popped, remains: %lu", frames.size());
-        break;
-      } else {
-        // unlock mutex and wait for cond signal, then lock mutex again
-        LMSLogWarning("Not enough audio data!");
-        SDL_CondWaitTimeout(this->cond, this->mutex, 10);
-      }
-    }
-
-    SDL_UnlockMutex(this->mutex);
-    
-    return frame;
-  }
-  
-  void refill_frame(AVFrame *frame) {
+  void pushFrame(AudioFrameItem *afi) {
     SDL_LockMutex(this->mutex);
     {
-      frames.push_front(frame);
+      frames.push_back(afi);
     }
     SDL_UnlockMutex(this->mutex);
+  }
+  
+  void refillFrame(AudioFrameItem *afi) {
+    SDL_LockMutex(this->mutex);
+    {
+      frames.push_front(afi);
+    }
+    SDL_UnlockMutex(this->mutex);
+  }
+
+  AudioFrameItem *popFrame() {
+    AudioFrameItem *afi = nullptr;
+    SDL_LockMutex(mutex);
+    {
+      if (!frames.empty()) {
+        afi = frames.front();
+        frames.pop_front();
+        LMSLogWarning("Audio popped, remains: %lu", frames.size());
+      } else {
+        LMSLogWarning("No audio frame available!");
+      }
+    }
+    SDL_UnlockMutex(this->mutex);
+    
+    return afi;
   }
 
 private:
   SDL_mutex *mutex;
   SDL_cond *cond;
-  std::list<AVFrame *> frames;
+  std::list<AudioFrameItem *> frames;
 
   void start(const StreamMeta &meta) override {
   }
@@ -255,13 +288,17 @@ private:
   void stop() override {
   }
   
+private:
+  AVStream *stream;
+  TimeSync *timeSync;
 };
 
 class VideoRenderDriver : public RenderDriver {
 public:
-  VideoRenderDriver(int maxBufferingFrames, Render *videoRender) {
+  VideoRenderDriver(int maxBufferingFrames, Render *videoRender, TimeSync *timeSync) {
     setIdealBufferingFrames(maxBufferingFrames);
-    this->render = videoRender;
+    this->render   = videoRender;
+    this->timeSync = timeSync;
   }
   
   void start(const StreamMeta& meta) override {
@@ -271,21 +308,52 @@ public:
     
     auto stream = (AVStream *)meta.data;
     double fps = av_q2d(stream->avg_frame_rate);
+    double spf = 1.0 / fps; // second per frame
     
-    lms::dispatchAsyncPeriodically(mainQueue(), fps, [this] {
-      if (delegate) {
-        dispatchAsync(mainQueue(), [this] {
-          delegate->willRunRenderLoop(this);
-        });
+    lms::dispatchAsyncPeriodically(mainQueue(), fps, [this, stream, spf] {
+      AVFrame *frame = nullptr;
+
+      while(true) {
+        frame = (AVFrame *)popFrame();
+        if (frame == nullptr) {
+          break;
+        }
+
+        double frameTime = frame->best_effort_timestamp * av_q2d(stream->time_base);
+        double playingTime = timeSync->getPlayingTime();
+        double deviation = frameTime - playingTime;
+
+        LMSLogVerbose("Video frame popped | pts:%lld, frameTime:%.2lf, playingTime:%.2lf, deviation:%.3lf(%.2lf frames)",
+                      frame->pts, frameTime, playingTime, deviation, deviation / spf);
+        
+        // deviation > 0 表示视频播放领先于音频的播放时间
+        // deviation < 0 表示视频播放落后于音频的播放时间
+        if (deviation > -(spf / 2)) {
+          break;
+        } else {
+          // 当deviation小于一帧的时间间隔时，可以认为它已经远落后于播放进度，因此应予以丢弃，并立即尝试处理下一帧
+          LMSLogWarning("Video frame dropped | pts:%lld, deviation:%.3lf(%.2lf frames)", frame->pts, deviation, deviation / spf);
+        }
       }
 
-      bool frameDeliveried = squeezeFrame(0);
+      if (frame == nullptr) {
+        LMSLogWarning("No video frame available!");
+        return;
+      }
 
+      dispatchAsync(mainQueue(), [this] {
+        delegate->willRunRenderLoop(this, this->frameIndex);
+      });
+
+      deliverFrame(frame);
+      
       if (delegate) {
-        dispatchAsync(mainQueue(), [this, frameDeliveried] () {
-          delegate->didRunRenderLoop(this, frameDeliveried);
+        dispatchAsync(mainQueue(), [this] () {
+          delegate->didRunRenderLoop(this, this->frameIndex);
         });
       }
+      
+      this->frameIndex += 1;
     });
   }
   
@@ -299,6 +367,8 @@ public:
  
 private:
   Render *render;
+  uint64_t frameIndex;
+  TimeSync *timeSync;
 };
 
 class Stream : virtual public Object {
@@ -385,7 +455,7 @@ public:
     packetsDecoding -= 1;
   }
   
-  void didRunRenderLoop(RenderDriver* driver, bool frameRendered) override {
+  void didRunRenderLoop(RenderDriver* driver, uint64_t frameIndex) override {
     int packetsToLoad = driver->numberOfEmptySlots() - packetsLoading - packetsDecoding;
     
     // 增加保底缓存帧数，避免当IdealFramesCount过小时（如1），一帧渲染了才去请求下一帧，从而退化为串行处理模式。
@@ -421,7 +491,8 @@ Player::Player(PassiveMediaSource *s, Render *vrender) {
   this->source  = lms::retain(s);
   this->vrender = lms::retain(vrender);
   this->vstream = nullptr;
-  this->coordinator = lms::retain(new Coordinator(s));
+  this->coordinator = new Coordinator(s);
+  this->timeSync = new TimeSync;
 }
 
 Player::~Player() {
@@ -447,7 +518,7 @@ void Player::play() {
     auto stream = (AVStream *)meta.data;
 
     if (meta.mediaType == MediaTypeVideo) {
-      VideoRenderDriver *driver = autoRelease(new VideoRenderDriver(10, vrender));
+      VideoRenderDriver *driver = autoRelease(new VideoRenderDriver(10, vrender, timeSync));
       driver->setDelegate(coordinator);
 
       Decoder *decoder = autoRelease(createDecoder(meta));
@@ -457,7 +528,7 @@ void Player::play() {
     } else if (meta.mediaType == MediaTypeAudio) {
       Decoder *decoder = autoRelease(createDecoder(meta));
       SDLAudioResampler *resampler = autoRelease(new SDLAudioResampler(stream));
-      SDLSpeaker *speaker = new SDLSpeaker(stream);
+      SDLSpeaker *speaker = new SDLSpeaker(stream, timeSync);
       astream = new Stream(meta, source, decoder, resampler, speaker);
     }
   }

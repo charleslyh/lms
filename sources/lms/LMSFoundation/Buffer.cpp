@@ -38,4 +38,20 @@ bool FramesBuffer::squeezeFrame(uint64_t pts) {
   return true;
 }
 
+Frame *FramesBuffer::popFrame() {
+  if (cachedFrames.empty()) {
+    LMSLogDebug("No frames available!");
+    return nullptr;
+  } else {
+    Frame *frame = cachedFrames.front();
+    cachedFrames.pop_front();
+    LMSLogDebug("Frame popped, remains: %lu", cachedFrames.size());
+    return frame;
+  }
+}
+
+void FramesBuffer::refillFrame(Frame *frame) {
+  cachedFrames.push_back(frame);
+}
+
 }
