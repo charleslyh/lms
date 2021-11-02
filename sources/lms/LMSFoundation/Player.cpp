@@ -14,6 +14,8 @@ extern "C" {
   #include <libavutil/imgutils.h>
   #include <SDL2/SDL.h>
 }
+#include <vector>
+#include <algorithm>
 
 namespace lms {
 
@@ -52,6 +54,8 @@ class RenderDriver : public FramesBuffer {
 public:
   virtual void start(const StreamMeta& meta) = 0;
   virtual void stop() = 0;
+  
+  virtual double cachedPlayingTime() = 0;
   
   void setDelegate(RenderDriverDelegate *delegate) {
     lms::release(this->delegate);
@@ -180,8 +184,7 @@ public:
   SDLSpeaker(AVStream *stream, TimeSync *timeSync) {
     this->stream   = stream;
     this->timeSync = timeSync;
-    this->mutex  = SDL_CreateMutex();
-    this->cond   = SDL_CreateCond();
+    this->mutex    = SDL_CreateMutex();
     
     SDL_AudioSpec request_specs, respond_specs;
     request_specs.freq     = stream->codecpar->sample_rate;
@@ -210,6 +213,10 @@ protected:
   
 private:
   static void loadAudioData(SDLSpeaker *self, Uint8 *data, int len) {
+    if (self->delegate) {
+      self->delegate->willRunRenderLoop(self, 0);
+    }
+
     memset(data, 0, len);
 
     while(len > 0) {
@@ -224,11 +231,10 @@ private:
       self->timeSync->updateTimePivot(ts);
 
       LMSLogVerbose("Start rendering audio frame | ts:%.2lf, pts:%llu", ts, frame->pts);
-      
+            
       int bytesToWrite = std::min(afi->remainBytes, len);
       memcpy(data, afi->rptr, bytesToWrite);
       
-              
       len -= bytesToWrite;
       afi->remainBytes -= bytesToWrite;
       afi->rptr += bytesToWrite;
@@ -241,6 +247,10 @@ private:
         av_frame_free(&frame);
         delete afi;
       }
+    }
+    
+    if (self->delegate) {
+      self->delegate->didRunRenderLoop(self, 0);
     }
   }
   
@@ -276,10 +286,14 @@ private:
     
     return afi;
   }
+  
+  double cachedPlayingTime() override {
+    double time = frames.size() * av_q2d(stream->time_base);
+    return time;
+  }
 
 private:
   SDL_mutex *mutex;
-  SDL_cond *cond;
   std::list<AudioFrameItem *> frames;
 
   void start(const StreamMeta &meta) override {
@@ -295,8 +309,8 @@ private:
 
 class VideoRenderDriver : public RenderDriver {
 public:
-  VideoRenderDriver(int maxBufferingFrames, Render *videoRender, TimeSync *timeSync) {
-    setIdealBufferingFrames(maxBufferingFrames);
+  VideoRenderDriver(AVStream *stream, Render *videoRender, TimeSync *timeSync) {
+    this->stream   = stream;
     this->render   = videoRender;
     this->timeSync = timeSync;
   }
@@ -306,11 +320,10 @@ public:
     
     render->start(meta);
     
-    auto stream = (AVStream *)meta.data;
     double fps = av_q2d(stream->avg_frame_rate);
     double spf = 1.0 / fps; // second per frame
     
-    lms::dispatchAsyncPeriodically(mainQueue(), fps, [this, stream, spf] {
+    lms::dispatchAsyncPeriodically(mainQueue(), fps, [this, spf] {
       AVFrame *frame = nullptr;
 
       while(true) {
@@ -321,14 +334,15 @@ public:
 
         double frameTime = frame->best_effort_timestamp * av_q2d(stream->time_base);
         double playingTime = timeSync->getPlayingTime();
+
+        // deviation > 0 表示视频播放领先于音频的播放时间
+        // deviation < 0 表示视频播放落后于音频的播放时间
         double deviation = frameTime - playingTime;
 
         LMSLogVerbose("Video frame popped | pts:%lld, frameTime:%.2lf, playingTime:%.2lf, deviation:%.3lf(%.2lf frames)",
                       frame->pts, frameTime, playingTime, deviation, deviation / spf);
         
-        // deviation > 0 表示视频播放领先于音频的播放时间
-        // deviation < 0 表示视频播放落后于音频的播放时间
-        if (deviation > -(spf / 2)) {
+        if (deviation > -spf) {
           break;
         } else {
           // 当deviation小于一帧的时间间隔时，可以认为它已经远落后于播放进度，因此应予以丢弃，并立即尝试处理下一帧
@@ -364,9 +378,15 @@ public:
 
     removeFrameAcceptor(render);
   }
+  
+  double cachedPlayingTime() override {
+    double spf = 1.0 / av_q2d(stream->avg_frame_rate);
+    return numberOfCachedFrames() * spf;
+  }
  
 private:
-  Render *render;
+  AVStream *stream;
+  Render   *render;
   uint64_t frameIndex;
   TimeSync *timeSync;
 };
@@ -389,11 +409,6 @@ public:
   }
   
   void start() {
-    /*
-     依赖关系：source -> codec -> renderDriver
-                ^        ^        ^
-                └──── vstream ────┘
-     */
     source->addPacketAcceptor(meta.streamId, decoder);
     
     if (resampler) {
@@ -429,7 +444,7 @@ private:
   RenderDriver       *renderDriver;
 };
 
-class Coordinator : public PacketAcceptor, public DecoderDelegate, public RenderDriverDelegate {
+class Coordinator : public RenderDriverDelegate {
 public:
   Coordinator(PassiveMediaSource *source) {
     this->source = lms::retain(source);
@@ -440,73 +455,43 @@ public:
   }
 
 public:
-  /* from src */
-  void didReceivePacket(Packet *packet) override  {
-    packetsLoading  -= 1;
+  void preload() {
+    this->source->loadPackets(100);
   }
-  
-  /* from ecoder */
-  void willStartDecodingPacket(Packet *packet) override {
-    packetsDecoding += 1;
-  }
-  
-  /* from decoder */
-  void didFinishDecodingPacket(Packet *packet) override {
-    packetsDecoding -= 1;
-  }
-  
+ 
   void didRunRenderLoop(RenderDriver* driver, uint64_t frameIndex) override {
-    int packetsToLoad = driver->numberOfEmptySlots() - packetsLoading - packetsDecoding;
-    
-    // 增加保底缓存帧数，避免当IdealFramesCount过小时（如1），一帧渲染了才去请求下一帧，从而退化为串行处理模式。
-    // 应对策略是使用一个保底帧数来尽可能平衡数据加载、解码的速度刚好和渲染的消耗速度相匹配，从而成为并行流水线模式。
-    // 如果该调整值过大，会导致缓存的帧数始终大于RenderDriver的理想缓存帧数。
-    // 否则，如果该调整值过小，则无法解决退化为穿行处理模式的问题
-    const int NumberOfFramesOffsetForLoadingCost = 5;
-    packetsToLoad += NumberOfFramesOffsetForLoadingCost;
-    
-    // 如果一个packet中包含较多的帧，则可能导致framesCached较大。进而使得packetsToLoad为负数
-    // 如：初始状态下，发起15个packets加载请求
-    // 每个packet中解出了3个frame。则framesCached为45, packetsLoading, packetsDecoding均为0
-    // 最终，packetsToLoad 为 15 - 45 - 0 - 0 + 5 = -25
-    // 对此，认为只要framesCached超过了FramesExpected，则为缓存充足的情况，可以不发起加载请求
-    packetsToLoad = std::max(0, packetsToLoad);
-
-    if (packetsToLoad <= 0) {
-      return;
+    LMSLogVerbose(nullptr);
+    if (driver->cachedPlayingTime() < 1.0) {
+      this->source->loadPackets(10);
     }
-
-    packetsLoading += packetsToLoad;
-    source->loadPackets(packetsToLoad);
   }
   
 private:
   PassiveMediaSource *source;
-  int packetsLoading = 0;
-  int packetsDecoding = 0;
 };
 
 
 Player::Player(PassiveMediaSource *s, Render *vrender) {
-  this->source  = lms::retain(s);
-  this->vrender = lms::retain(vrender);
-  this->vstream = nullptr;
+  this->source      = lms::retain(s);
+  this->vrender     = lms::retain(vrender);
   this->coordinator = new Coordinator(s);
-  this->timeSync = new TimeSync;
+  this->timesync    = new TimeSync;
+  this->vstream     = nullptr;
+  this->astream     = nullptr;
 }
 
 Player::~Player() {
   lms::release(coordinator);
+  lms::release(timesync);
   lms::release(vstream);
+  lms::release(astream);
   lms::release(source);
 }
 
 void Player::play() {
   LMSLogInfo(nullptr);
 
-  source->addPacketAcceptor(StreamIdAny, coordinator);
-
-  /* 必须先加载source的数据才能获取当中的元信息 */
+  // 必须先加载source的数据才能获取当中的元信息
   if (source->open() != 0) {
     return;
   }
@@ -518,17 +503,19 @@ void Player::play() {
     auto stream = (AVStream *)meta.data;
 
     if (meta.mediaType == MediaTypeVideo) {
-      VideoRenderDriver *driver = autoRelease(new VideoRenderDriver(10, vrender, timeSync));
+      VideoRenderDriver *driver = autoRelease(new VideoRenderDriver(stream, vrender, timesync));
       driver->setDelegate(coordinator);
 
       Decoder *decoder = autoRelease(createDecoder(meta));
-      decoder->setDelegate(coordinator);
 
       vstream = new Stream(meta, source, decoder, nullptr, driver);
     } else if (meta.mediaType == MediaTypeAudio) {
+      SDLSpeaker *speaker = new SDLSpeaker(stream, timesync);
+      speaker->setDelegate(coordinator);
+
       Decoder *decoder = autoRelease(createDecoder(meta));
+
       SDLAudioResampler *resampler = autoRelease(new SDLAudioResampler(stream));
-      SDLSpeaker *speaker = new SDLSpeaker(stream, timeSync);
       astream = new Stream(meta, source, decoder, resampler, speaker);
     }
   }
@@ -541,7 +528,7 @@ void Player::play() {
   vstream->start();
   astream->start();
 
-  source->loadPackets(100);
+  coordinator->preload();
 }
 
 void Player::stop() {
@@ -555,8 +542,6 @@ void Player::stop() {
     vstream->stop();
   }
   source->close();
-
-  source->removePacketAcceptor(coordinator);
 
   lms::release(vstream);
   lms::release(coordinator);

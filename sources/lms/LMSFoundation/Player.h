@@ -26,7 +26,7 @@ private:
   Coordinator *coordinator;
 
   Stream *astream;
-  TimeSync *timeSync;
+  TimeSync *timesync;
 };
 
 }
