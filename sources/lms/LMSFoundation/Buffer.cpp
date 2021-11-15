@@ -3,31 +3,59 @@
 
 namespace lms {
 
-size_t FramesBuffer::numberOfCachedFrames() const {
-  return cachedFrames.size();
+FramesBuffer::FramesBuffer() {
+  this->mtx = SDL_CreateMutex();
 }
 
-void FramesBuffer::didReceiveFrame(Frame *frame) {
+FramesBuffer::~FramesBuffer() {
+  SDL_DestroyMutex(this->mtx);
+}
+
+size_t FramesBuffer::numberOfCachedFrames() const {
+  size_t sz;
+  SDL_LockMutex(mtx);
+  {
+    sz = cachedFrames.size();
+  }
+  SDL_UnlockMutex(mtx);
+  return sz;
+}
+
+void FramesBuffer::pushBack(Frame *frame) {
   LMSLogVerbose("Frame: %p", frame);
   
-  auto avfrm  = av_frame_clone((AVFrame *)frame);
-  cachedFrames.push_back(avfrm);
+  SDL_LockMutex(mtx);
+  {
+    auto avfrm  = av_frame_clone((AVFrame *)frame);
+    cachedFrames.push_back(avfrm);
+  }
+  SDL_UnlockMutex(mtx);
 }
 
 Frame *FramesBuffer::popFrame() {
-  if (cachedFrames.empty()) {
-    LMSLogDebug("No frames available!");
-    return nullptr;
-  } else {
-    Frame *frame = cachedFrames.front();
-    cachedFrames.pop_front();
-    LMSLogDebug("Frame popped, remains: %lu", cachedFrames.size());
-    return frame;
+  Frame *frame = nullptr;
+  
+  SDL_LockMutex(mtx);
+  {
+    if (cachedFrames.empty()) {
+      LMSLogDebug("No frames available!");
+    } else {
+      frame = cachedFrames.front();
+      cachedFrames.pop_front();
+      LMSLogDebug("Frame popped, remains: %lu", cachedFrames.size());
+    }
   }
+  SDL_UnlockMutex(mtx);
+
+  return frame;
 }
 
 void FramesBuffer::refillFrame(Frame *frame) {
-  cachedFrames.push_back(frame);
+  SDL_LockMutex(mtx);
+  {
+    cachedFrames.push_back(frame);
+  }
+  SDL_UnlockMutex(mtx);
 }
 
 }

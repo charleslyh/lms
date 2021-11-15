@@ -50,7 +50,7 @@ public:
   virtual void didRunRenderLoop(RenderDriver *driver, uint64_t frameIndex) {}
 };
 
-class RenderDriver : public FramesBuffer {
+class RenderDriver : public FrameAcceptor {
 public:
   virtual void start(const StreamMeta& meta) = 0;
   virtual void stop() = 0;
@@ -313,11 +313,14 @@ public:
     this->stream   = stream;
     this->render   = videoRender;
     this->timeSync = timeSync;
+    this->buffer   = new FramesBuffer;
+  }
+  
+  ~VideoRenderDriver() {
+    lms::release(buffer);
   }
   
   void start(const StreamMeta& meta) override {
-    addFrameAcceptor(render);
-    
     render->start(meta);
     
     double fps = av_q2d(stream->avg_frame_rate);
@@ -327,7 +330,7 @@ public:
       AVFrame *frame = nullptr;
 
       while(true) {
-        frame = (AVFrame *)popFrame();
+        frame = (AVFrame *)buffer->popFrame();
         if (frame == nullptr) {
           break;
         }
@@ -359,7 +362,9 @@ public:
         delegate->willRunRenderLoop(this, this->frameIndex);
       });
 
-      deliverFrame(frame);
+      if (render) {
+        render->didReceiveFrame(frame);
+      }
       
       if (delegate) {
         dispatchAsync(mainQueue(), [this] () {
@@ -375,13 +380,15 @@ public:
     LMSLogError("TODO: Cancel periodic job");
     
     render->stop();
-
-    removeFrameAcceptor(render);
   }
   
   double cachedPlayingTime() override {
     double spf = 1.0 / av_q2d(stream->avg_frame_rate);
-    return numberOfCachedFrames() * spf;
+    return buffer->numberOfCachedFrames() * spf;
+  }
+  
+  void didReceiveFrame(Frame *frame) override {
+    buffer->pushBack(frame);
   }
  
 private:
@@ -389,6 +396,7 @@ private:
   Render   *render;
   uint64_t frameIndex;
   TimeSync *timeSync;
+  FramesBuffer *buffer;
 };
 
 class Stream : virtual public Object {
