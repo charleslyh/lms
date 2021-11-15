@@ -71,6 +71,7 @@ class Resampler: public FrameAcceptor, public FrameSource {};
 
 class SDLAudioResampler: public Resampler {
   AVStream *stream;
+  SwrContext *context;
   int out_channel_layout;
   int out_sample_rate;
   AVSampleFormat out_sample_format;
@@ -81,52 +82,53 @@ public:
     this->out_sample_format  = AV_SAMPLE_FMT_S16;
     this->out_sample_rate    = stream->codecpar->sample_rate;
     this->out_channel_layout = stream->codecpar->channel_layout;
-  }
 
-public:
-  void didReceiveFrame(Frame *frame) override {
-    AVFrame *avfrm = (AVFrame *)frame;
-    
-    SwrContext *context = nullptr;
-    int ret = 0;
+    this->context = swr_alloc();
     int64_t in_channel_layout  = stream->codecpar->channel_layout;
     int in_nb_channels = stream->codecpar->channels;
     int in_nb_samples = 0;
-    int out_linesize = 0;
-    int max_out_nb_samples = 0;
-    uint8_t **resampled_data = NULL;
-    int resampled_data_size = 0;
-    int out_nb_channels = av_get_channel_layout_nb_channels(out_channel_layout);
-    
-    context = swr_alloc();
-    
+       
     // get input audio channels
     bool channels_matches_layout = (in_nb_channels == av_get_channel_layout_nb_channels(in_channel_layout));
     if (!channels_matches_layout) {
       in_channel_layout = av_get_default_channel_layout(in_nb_channels);
     }
     
-    ret = av_opt_set_int(context, "in_channel_layout", in_channel_layout, 0);
-    ret = av_opt_set_int(context, "in_sample_rate",    stream->codecpar->sample_rate, 0);
-    ret = av_opt_set_sample_fmt(context, "in_sample_fmt", (enum AVSampleFormat)stream->codecpar->format, 0);
+    int ret = 0;
+    ret = av_opt_set_int(context,        "in_channel_layout", in_channel_layout, 0);
+    ret = av_opt_set_int(context,        "in_sample_rate",    stream->codecpar->sample_rate, 0);
+    ret = av_opt_set_sample_fmt(context, "in_sample_fmt",     (enum AVSampleFormat)stream->codecpar->format, 0);
 
     ret = av_opt_set_int(context, "out_channel_layout", out_channel_layout, 0);
-    ret = av_opt_set_int(context, "out_sample_rate", out_sample_rate, 0);
-    ret = av_opt_set_int(context, "out_sample_fmt", out_sample_format, 0);
-    
+    ret = av_opt_set_int(context, "out_sample_rate",    out_sample_rate,    0);
+    ret = av_opt_set_int(context, "out_sample_fmt",     out_sample_format,  0);
+
     ret = swr_init(context);
+  }
+
+  ~SDLAudioResampler() {
+    swr_free(&this->context);
+  }
+
+public:
+  void didReceiveFrame(Frame *frame) override {
+    AVFrame *avfrm = (AVFrame *)frame;
+    int out_linesize = 0;
+    uint8_t **resampled_data = NULL;
+    int resampled_data_size = 0;
+    int out_nb_channels = av_get_channel_layout_nb_channels(out_channel_layout);
+
+    int max_out_nb_samples = av_rescale_rnd(avfrm->nb_samples,
+                                            out_sample_rate,
+                                            avfrm->sample_rate,
+                                            AV_ROUND_UP);
     
-    max_out_nb_samples = av_rescale_rnd(avfrm->nb_samples,
-                                        out_sample_rate,
-                                        avfrm->sample_rate,
-                                        AV_ROUND_UP);
-    
-    ret = av_samples_alloc_array_and_samples(&resampled_data,
-                                             &out_linesize,
-                                             out_nb_channels,
-                                             max_out_nb_samples,
-                                             out_sample_format,
-                                             0);
+    int ret = av_samples_alloc_array_and_samples(&resampled_data,
+                                                 &out_linesize,
+                                                 out_nb_channels,
+                                                 max_out_nb_samples,
+                                                 out_sample_format,
+                                                 0);
     
     if (!resampled_data) {
       return;
@@ -169,7 +171,6 @@ public:
 
     av_freep(&resampled_data[0]);
     av_freep(&resampled_data);
-    swr_free(&context);
   }
 };
 
