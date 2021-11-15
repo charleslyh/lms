@@ -11,15 +11,17 @@ namespace lms {
 template<class T>
 class FramesBuffer : virtual public Object {
 public:
-  FramesBuffer()  {
+  FramesBuffer(const char *client = "unknown")  {
     this->mtx = SDL_CreateMutex();
+    this->client = strdup(client);
   }
   
   ~FramesBuffer() {
+    free(this->client);
     SDL_DestroyMutex(this->mtx);
   }
   
-  size_t numberOfCachedFrames() const {
+  size_t count() const {
     size_t sz;
     SDL_LockMutex(mtx);
     {
@@ -29,7 +31,7 @@ public:
     return sz;
   }
    
-  Frame* popFrame() {
+  T popFront() {
     T frame = nullptr;
     
     SDL_LockMutex(mtx);
@@ -39,7 +41,7 @@ public:
       } else {
         frame = cachedFrames.front();
         cachedFrames.pop_front();
-        LMSLogDebug("Frame popped, remains: %lu", cachedFrames.size());
+        LMSLogDebug("Frame popped, client: %s, remains: %lu", client, cachedFrames.size());
       }
     }
     SDL_UnlockMutex(mtx);
@@ -47,7 +49,7 @@ public:
     return frame;
   }
   
-  void refillFrame(T frame) {
+  void pushFront(T frame) {
     SDL_LockMutex(mtx);
     {
       cachedFrames.push_back(frame);
@@ -60,16 +62,15 @@ public:
     
     SDL_LockMutex(mtx);
     {
-      auto avfrm  = av_frame_clone(frame);
-      cachedFrames.push_back(avfrm);
+      cachedFrames.push_back(frame);
     }
     SDL_UnlockMutex(mtx);
   }
 
 private:
-  int idealBufferingFrames;
   std::list<T> cachedFrames;
   SDL_mutex *mtx;
+  char *client;
 };
 
 }

@@ -182,9 +182,9 @@ class SDLSpeaker: public RenderDriver {
   
 public:
   SDLSpeaker(AVStream *stream, TimeSync *timeSync) {
-    this->stream   = stream;
-    this->timeSync = timeSync;
-    this->mutex    = SDL_CreateMutex();
+    this->stream     = stream;
+    this->timeSync   = timeSync;
+    this->frameItems = new FramesBuffer<AudioFrameItem *>("speaker");
     
     SDL_AudioSpec request_specs, respond_specs;
     request_specs.freq     = stream->codecpar->sample_rate;
@@ -208,7 +208,7 @@ protected:
   void didReceiveFrame(Frame *frame) override {
     auto avfrm = (AVFrame *)frame;
     AudioFrameItem *afi = new AudioFrameItem { avfrm, avfrm->data[0], avfrm->linesize[0] };
-    pushFrame(afi);
+    frameItems->pushBack(afi);
   }
   
 private:
@@ -220,7 +220,7 @@ private:
     memset(data, 0, len);
 
     while(len > 0) {
-      AudioFrameItem *afi = self->popFrame();
+      AudioFrameItem *afi = self->frameItems->popFront();
       if (afi == nullptr) {
         break;
       }
@@ -241,7 +241,7 @@ private:
 
       // 如果frame中剩余了数据未消费，则重新放入待处理队列
       if (afi->remainBytes > 0) {
-        self->refillFrame(afi);
+        self->frameItems->pushFront(afi);
       } else {
         av_freep(&frame->data[0]);
         av_frame_free(&frame);
@@ -254,48 +254,12 @@ private:
     }
   }
   
-  void pushFrame(AudioFrameItem *afi) {
-    SDL_LockMutex(this->mutex);
-    {
-      frames.push_back(afi);
-    }
-    SDL_UnlockMutex(this->mutex);
-  }
-  
-  void refillFrame(AudioFrameItem *afi) {
-    SDL_LockMutex(this->mutex);
-    {
-      frames.push_front(afi);
-    }
-    SDL_UnlockMutex(this->mutex);
-  }
-
-  AudioFrameItem *popFrame() {
-    AudioFrameItem *afi = nullptr;
-    SDL_LockMutex(mutex);
-    {
-      if (!frames.empty()) {
-        afi = frames.front();
-        frames.pop_front();
-        LMSLogWarning("Audio popped, remains: %lu", frames.size());
-      } else {
-        LMSLogWarning("No audio frame available!");
-      }
-    }
-    SDL_UnlockMutex(this->mutex);
-    
-    return afi;
-  }
-  
   double cachedPlayingTime() override {
-    double time = frames.size() * av_q2d(stream->time_base);
+    double time = frameItems->count() * av_q2d(stream->time_base);
     return time;
   }
 
 private:
-  SDL_mutex *mutex;
-  std::list<AudioFrameItem *> frames;
-
   void start(const StreamMeta &meta) override {
   }
   
@@ -305,6 +269,7 @@ private:
 private:
   AVStream *stream;
   TimeSync *timeSync;
+  FramesBuffer<AudioFrameItem *> *frameItems;
 };
 
 class VideoRenderDriver : public RenderDriver {
@@ -330,7 +295,7 @@ public:
       AVFrame *frame = nullptr;
 
       while(true) {
-        frame = (AVFrame *)buffer->popFrame();
+        frame = (AVFrame *)buffer->popFront();
         if (frame == nullptr) {
           break;
         }
@@ -384,11 +349,13 @@ public:
   
   double cachedPlayingTime() override {
     double spf = 1.0 / av_q2d(stream->avg_frame_rate);
-    return buffer->numberOfCachedFrames() * spf;
+    return buffer->count() * spf;
   }
   
   void didReceiveFrame(Frame *frame) override {
-    buffer->pushBack((AVFrame *)frame);
+    AVFrame *avfrm = (AVFrame *)frame;
+    
+    buffer->pushBack(av_frame_clone(avfrm));
   }
  
 private:
@@ -408,7 +375,7 @@ public:
     this->resampler    = lms::retain(resampler);
     this->decoder      = lms::retain(decoder);
   }
-  
+
   ~Stream() {
     lms::release(source);
     lms::release(resampler);
