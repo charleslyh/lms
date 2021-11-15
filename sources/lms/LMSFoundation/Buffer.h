@@ -11,13 +11,11 @@ namespace lms {
 template<class T>
 class FramesBuffer : virtual public Object {
 public:
-  FramesBuffer(const char *client = "unknown")  {
+  FramesBuffer()  {
     this->mtx = SDL_CreateMutex();
-    this->client = strdup(client);
   }
   
   ~FramesBuffer() {
-    free(this->client);
     SDL_DestroyMutex(this->mtx);
   }
   
@@ -37,11 +35,9 @@ public:
     SDL_LockMutex(mtx);
     {
       if (cachedFrames.empty()) {
-        LMSLogDebug("No frames available!");
       } else {
         frame = cachedFrames.front();
         cachedFrames.pop_front();
-        LMSLogDebug("Frame popped, client: %s, remains: %lu", client, cachedFrames.size());
       }
     }
     SDL_UnlockMutex(mtx);
@@ -70,7 +66,6 @@ public:
 private:
   std::list<T> cachedFrames;
   SDL_mutex *mtx;
-  char *client;
 };
 
 }

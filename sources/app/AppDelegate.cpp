@@ -73,28 +73,25 @@ public:
 
   void loadPackets(int numberRequested) override {
     LMSLogVerbose("numberRequested: %d", numberRequested);
-    
-    dispatchAsync(lms::mainQueue(), [this, numberRequested] () {
-      int numberRemains = numberRequested;
-      while(numberRemains > 0) {
-        int rt = av_read_frame(context, &sharedPacket);
+
+    for (int i = 0; i< numberRequested; i += 1) {
+      dispatchAsync(lms::mainQueue(), [this] () {
+        AVPacket packet;
+        int rt = av_read_frame(context, &packet);
         if (rt >= 0) {
-          deliverPacket(&sharedPacket);
-          av_packet_unref(&sharedPacket);
+          deliverPacket(&packet);
+          av_packet_unref(&packet);
         }
-        
-        numberRemains -= 1;
-      }
       
-      return 0;
-    });
+        return 0;
+      });
+    }
   }
 
 private:
   char *path;
   AVFormatContext    *context;
   lms::DispatchQueue *queue;
-  AVPacket sharedPacket;
 };
 
 

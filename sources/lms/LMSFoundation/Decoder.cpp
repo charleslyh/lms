@@ -75,9 +75,11 @@ void FFMDecoder::didReceivePacket(Packet *packet) {
     return;
   }
   
-  auto avpkt = (AVPacket *)packet;
+  auto srcpkt = (AVPacket *)packet;
+  AVPacket *avpkt = av_packet_alloc();
+  av_packet_ref(avpkt, srcpkt);
   
-//  dispatchAsync(mainQueue(), [this, avpkt]() {
+  dispatchAsync(mainQueue(), [this, avpkt]() {
     notifyDecoderEvent(avpkt, 0);
     LMSLogVerbose("Begin decoding frame: %p", avpkt);
 
@@ -96,13 +98,6 @@ void FFMDecoder::didReceivePacket(Packet *packet) {
         break;
       }
       
-      static int i = 1;
-      
-      if (avpkt->stream_index == 0) {
-        frame->pts = i;
-        i += 1;
-      }
-      
       deliverFrame(frame);
       
       av_frame_unref(frame);
@@ -113,8 +108,8 @@ void FFMDecoder::didReceivePacket(Packet *packet) {
     
     av_packet_unref(avpkt);
     
-//    return 0;
-//  });
+    return 0;
+  });
 }
 
 Decoder::~Decoder() {

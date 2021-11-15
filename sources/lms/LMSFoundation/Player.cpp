@@ -46,8 +46,8 @@ class RenderDriver;
 
 class RenderDriverDelegate : virtual public Object {
 public:
-  virtual void willRunRenderLoop(RenderDriver *driver, uint64_t frameIndex) {}
-  virtual void didRunRenderLoop(RenderDriver *driver, uint64_t frameIndex) {}
+  virtual void willRunRenderLoop(RenderDriver *driver) {}
+  virtual void didRunRenderLoop(RenderDriver *driver) {}
 };
 
 class RenderDriver : public FrameAcceptor {
@@ -184,7 +184,7 @@ public:
   SDLSpeaker(AVStream *stream, TimeSync *timeSync) {
     this->stream     = stream;
     this->timeSync   = timeSync;
-    this->frameItems = new FramesBuffer<AudioFrameItem *>("speaker");
+    this->frameItems = new FramesBuffer<AudioFrameItem *>;
     
     SDL_AudioSpec request_specs, respond_specs;
     request_specs.freq     = stream->codecpar->sample_rate;
@@ -214,7 +214,7 @@ protected:
 private:
   static void loadAudioData(SDLSpeaker *self, Uint8 *data, int len) {
     if (self->delegate) {
-      self->delegate->willRunRenderLoop(self, 0);
+      self->delegate->willRunRenderLoop(self);
     }
 
     memset(data, 0, len);
@@ -250,7 +250,7 @@ private:
     }
     
     if (self->delegate) {
-      self->delegate->didRunRenderLoop(self, 0);
+      self->delegate->didRunRenderLoop(self);
     }
   }
   
@@ -294,6 +294,7 @@ public:
     lms::dispatchAsyncPeriodically(mainQueue(), fps, [this, spf] {
       AVFrame *frame = nullptr;
 
+      // 从buffer中循环取出匹配当前播放时间的图像帧，或者buffer为空，则终止
       while(true) {
         frame = (AVFrame *)buffer->popFront();
         if (frame == nullptr) {
@@ -323,21 +324,17 @@ public:
         return;
       }
 
-      dispatchAsync(mainQueue(), [this] {
-        delegate->willRunRenderLoop(this, this->frameIndex);
-      });
+      if (delegate) {
+        delegate->willRunRenderLoop(this);
+      }
 
       if (render) {
         render->didReceiveFrame(frame);
       }
-      
+
       if (delegate) {
-        dispatchAsync(mainQueue(), [this] () {
-          delegate->didRunRenderLoop(this, this->frameIndex);
-        });
+        delegate->didRunRenderLoop(this);
       }
-      
-      this->frameIndex += 1;
     });
   }
   
@@ -361,7 +358,6 @@ public:
 private:
   AVStream *stream;
   Render   *render;
-  uint64_t frameIndex;
   TimeSync *timeSync;
   FramesBuffer<AVFrame *> *buffer;
 };
@@ -434,7 +430,7 @@ public:
     this->source->loadPackets(100);
   }
  
-  void didRunRenderLoop(RenderDriver* driver, uint64_t frameIndex) override {
+  void didRunRenderLoop(RenderDriver* driver) override {
     LMSLogVerbose(nullptr);
     if (driver->cachedPlayingTime() < 1.0) {
       this->source->loadPackets(10);
