@@ -149,7 +149,7 @@ public:
     }
 
     out_nb_samples = swr_convert(context, resampled_data, out_nb_samples, (const uint8_t **)avfrm->data, avfrm->nb_samples);
-    
+
     resampled_data_size = av_samples_get_buffer_size(&out_linesize,
                                                      out_nb_channels,
                                                      out_nb_samples,
@@ -186,6 +186,7 @@ public:
     this->stream     = stream;
     this->timeSync   = timeSync;
     this->frameItems = new FramesBuffer<AudioFrameItem *>;
+    this->totalSamples = 0;
     
     SDL_AudioSpec request_specs, respond_specs;
     request_specs.freq     = stream->codecpar->sample_rate;
@@ -210,6 +211,8 @@ protected:
     auto avfrm = (AVFrame *)frame;
     AudioFrameItem *afi = new AudioFrameItem { avfrm, avfrm->data[0], avfrm->linesize[0] };
     frameItems->pushBack(afi);
+    
+    totalSamples += avfrm->linesize[0];
   }
   
 private:
@@ -219,19 +222,21 @@ private:
     }
 
     memset(data, 0, len);
-
+    
     while(len > 0) {
       AudioFrameItem *afi = self->frameItems->popFront();
       if (afi == nullptr) {
+        LMSLogWarning("No audio frame available!");
         break;
       }
       
       AVFrame *frame = afi->frame;
-      double ts = frame->pts * av_q2d(self->stream->time_base);
-      
-      self->timeSync->updateTimePivot(ts);
 
-      LMSLogVerbose("Start rendering audio frame | ts:%.2lf, pts:%llu", ts, frame->pts);
+      double ts = frame->pts * av_q2d(self->stream->time_base);
+      self->timeSync->updateTimePivot(ts);
+      
+      LMSLogVerbose("Start rendering audio frame | ts:%.2lf, pts:%llu, remains: %lu",
+                    ts, frame->pts, self->frameItems->count());
             
       int bytesToWrite = std::min(afi->remainBytes, len);
       memcpy(data, afi->rptr, bytesToWrite);
@@ -239,6 +244,8 @@ private:
       len -= bytesToWrite;
       afi->remainBytes -= bytesToWrite;
       afi->rptr += bytesToWrite;
+      
+      self->totalSamples -= bytesToWrite;
 
       // 如果frame中剩余了数据未消费，则重新放入待处理队列
       if (afi->remainBytes > 0) {
@@ -256,8 +263,8 @@ private:
   }
   
   double cachedPlayingTime() override {
-    double time = frameItems->count() * av_q2d(stream->time_base);
-    return time;
+    int out_nb_channels = av_get_channel_layout_nb_channels(stream->codecpar->channel_layout);
+    return (double)totalSamples / (double)stream->codecpar->sample_rate / out_nb_channels / 2 /* bytes per sample */;
   }
 
 private:
@@ -271,6 +278,7 @@ private:
   AVStream *stream;
   TimeSync *timeSync;
   FramesBuffer<AudioFrameItem *> *frameItems;
+  uint32_t totalSamples;
 };
 
 class VideoRenderDriver : public RenderDriver {
@@ -433,6 +441,8 @@ public:
  
   void didRunRenderLoop(RenderDriver* driver) override {
     LMSLogVerbose(nullptr);
+
+    LMSLogVerbose("RenderDriver: %p, cachedPlayingTime: %.2lf", driver, driver->cachedPlayingTime());
     if (driver->cachedPlayingTime() < 1.0) {
       this->source->loadPackets(10);
     }
@@ -476,6 +486,7 @@ void Player::play() {
 
     if (meta.mediaType == MediaTypeVideo) {
       VideoRenderDriver *driver = autoRelease(new VideoRenderDriver(stream, vrender, timesync));
+      LMSLogVerbose("RenderDriver: %p, for Video", driver);
       driver->setDelegate(coordinator);
 
       Decoder *decoder = autoRelease(createDecoder(meta));
@@ -483,6 +494,7 @@ void Player::play() {
       vstream = new Stream(meta, source, decoder, nullptr, driver);
     } else if (meta.mediaType == MediaTypeAudio) {
       SDLSpeaker *speaker = new SDLSpeaker(stream, timesync);
+      LMSLogVerbose("RenderDriver: %p, for Audio", speaker);
       speaker->setDelegate(coordinator);
 
       Decoder *decoder = autoRelease(createDecoder(meta));
