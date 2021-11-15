@@ -313,7 +313,7 @@ public:
     this->stream   = stream;
     this->render   = videoRender;
     this->timeSync = timeSync;
-    this->buffer   = new FramesBuffer;
+    this->buffer   = new FramesBuffer<AVFrame *>;
   }
   
   ~VideoRenderDriver() {
@@ -388,7 +388,7 @@ public:
   }
   
   void didReceiveFrame(Frame *frame) override {
-    buffer->pushBack(frame);
+    buffer->pushBack((AVFrame *)frame);
   }
  
 private:
@@ -396,7 +396,7 @@ private:
   Render   *render;
   uint64_t frameIndex;
   TimeSync *timeSync;
-  FramesBuffer *buffer;
+  FramesBuffer<AVFrame *> *buffer;
 };
 
 class Stream : virtual public Object {
