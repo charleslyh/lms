@@ -4,31 +4,97 @@
 #include <list>
 #include <algorithm>
 #include <cassert>
+#include <sstream>
+
+extern "C" {
+#include <SDL2/SDL.h>
+}
 
 namespace lms {
 
-Object::Object()
-:refCount(1)
-{
+#if (LMS_TRACE_LEAKS_ENABLED)
+class LeaksTracer {
+  std::set<Object *> objects;
+  SDL_mutex *mtx;
+  
+public:
+  LeaksTracer() {
+    mtx = SDL_CreateMutex();
+  }
+  
+  ~LeaksTracer() {
+    SDL_DestroyMutex(mtx);
+  }
+  
+  void add(Object *obj) {
+    SDL_LockMutex(mtx);
+    objects.insert(obj);
+    SDL_UnlockMutex(mtx);
+  }
+  
+  void remove(Object *obj) {
+    SDL_LockMutex(mtx);
+    objects.erase(obj);
+    SDL_UnlockMutex(mtx);
+  }
+
+  void dumpLeaks() {
+    LMSLogVerbose("Leaks: %d", (int)objects.size());
+    
+    if (!objects.empty()) {
+      LMSLogVerbose("--- Start ---");
+      for (auto obj = objects.begin(); obj != objects.end(); ++obj) {
+        LMSLogVerbose("obj: %p", *obj);
+        Object *objptr = *obj;
+        for (auto s = objptr->traces.begin(); s != objptr->traces.end(); ++s) {
+          LMSLogVerbose("  %s", s->c_str());
+        }
+      }
+      LMSLogVerbose("--- End ---");
+    }
+  }
+};
+
+static LeaksTracer __leaksTracer;
+#  define TraceObject(obj)   __leaksTracer.add(obj)
+#  define UntraceObject(obj) __leaksTracer.remove(obj)
+#  define DumpLeaks()        __leaksTracer.dumpLeaks()
+#else
+#  define TraceObject(obj)
+#  define UntraceObject(obj)
+#  define DumpLeaks()
+#endif // LMS_TRACE_LEAKS_ENABLED
+
+void dumpLeaks() {
+  DumpLeaks();
 }
 
+Object::Object() :refCount(1) {
+#if (LMS_TRACE_LEAKS_ENABLED)
+  const char *backtrace = stacktrace_caller_frame_desc("N");
+  traces.push_back(backtrace);
+  free((void *)backtrace);
+#endif
+  
+  TraceObject(this);
+}
 
-Object::~Object() = default;
+Object::~Object() {
+  UntraceObject(this);
+}
 
-
-void Object::retain() {
+void Object::ref() {
   refCount += 1;
-
-  LMSLogVerbose("%p", this);
 }
 
+void Object::unref() {
+  int newCount = (refCount -= 1);
+  
+  if (newCount < 0) {
+    assert(false);
+  }
 
-void Object::release() {
-  LMSLogVerbose("%p", this);
-
-  refCount -= 1;
-
-  if (refCount == 0) {
+  if (newCount == 0) {
     delete this;
   }
 }
@@ -38,29 +104,38 @@ void release(Object *object) {
     return;
   }
 
-  object->release();
-}
+#if (LMS_TRACE_LEAKS_ENABLED)
+  const char *backtrace = stacktrace_caller_frame_desc("U");
+  object->traces.push_back(backtrace);
+  free((void *)backtrace);
+#endif
 
+  object->unref();
+}
 
 class Core {
 public:
   explicit Core(DispatchQueue *mainQueue) {
-    this->mainQueue = retain(mainQueue);
+    this->arpMtx    = SDL_CreateMutex();
+    this->mainQueue = lms::retain(mainQueue);
   }
 
   ~Core() {
     release(this->mainQueue);
+    SDL_DestroyMutex(arpMtx);
   }
 
 public:
   std::list<Object *> autoReleasePool;
+  SDL_mutex *arpMtx;
+  
   DispatchQueue       *mainQueue;
 };
 
 static Core *core = nullptr;
 
 
-void performAutoRelease(Object *object) {
+void autoReleaseObj(Object *object) {
   if (object == nullptr) {
     return;
   }
@@ -73,12 +148,11 @@ void drainAutoReleasePool() {
   if (core->autoReleasePool.empty()) {
     return;
   }
+ 
+  for (auto it = core->autoReleasePool.begin(); it != core->autoReleasePool.end(); it++) {
+    lms::release(*it);
+  }
 
-  LMSLogVerbose("size before drain: %lu", core->autoReleasePool.size());
-
-  std::for_each(begin(core->autoReleasePool), end(core->autoReleasePool), [] (Object *obj) {
-    obj->release();
-  });
   core->autoReleasePool.clear();
 }
 
@@ -100,7 +174,7 @@ DispatchQueue *mainQueue() {
 }
 
 DispatchQueue *createDispatchQueue(const char *queueName) {
-  return retain(core->mainQueue);
+  return lms::retain(core->mainQueue);
 }
 
 void dispatchAsync(DispatchQueue *queue, Runnable *runnable) {
@@ -146,15 +220,20 @@ private:
 };
 
 void dispatchAsync(DispatchQueue *queue, std::function<void()> lambda) {
-  queue->async(autoRelease(new LambdaRunnable(lambda)));
+  auto r = new LambdaRunnable(lambda);
+  queue->async(r);
+  lms::release(r);
 }
 
 PeriodicJobId dispatchAsyncPeriodically(DispatchQueue *queue, double period, std::function<void()> lambda) {
-  return queue->asyncPeriodically(period, autoRelease(new LambdaRunnable(lambda)));
+  auto r = new LambdaRunnable(lambda);
+  PeriodicJobId jobId = queue->asyncPeriodically(period, r);
+  lms::release(r);
+  return jobId;
 }
 
-void cancelPeriodicObj(PeriodicJobId jobId) {
-  
+void cancelPeriodicObj(DispatchQueue *queue, PeriodicJobId jobId) {
+  queue->cancelPeriodicalJob(jobId);
 }
 
 void dumpBytes(uint8_t *data, int size, int bytesPerLine) {

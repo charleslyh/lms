@@ -52,6 +52,10 @@ public:
 
 class RenderDriver : public FrameAcceptor {
 public:
+  ~RenderDriver() {
+    lms::release(this->delegate);
+  }
+  
   virtual void start(const StreamMeta& meta) = 0;
   virtual void stop() = 0;
   
@@ -184,7 +188,7 @@ class SDLSpeaker: public RenderDriver {
 public:
   SDLSpeaker(AVStream *stream, TimeSync *timeSync) {
     this->stream     = stream;
-    this->timeSync   = timeSync;
+    this->timeSync   = lms::retain(timeSync);
     this->frameItems = new FramesBuffer<AudioFrameItem *>;
     this->totalSamples = 0;
     
@@ -197,13 +201,21 @@ public:
     request_specs.callback = (SDL_AudioCallback) loadAudioData;
     request_specs.userdata = this;
     
-    SDL_AudioDeviceID speakerId = SDL_OpenAudioDevice(NULL,
-                                                      0,
-                                                      &request_specs,
-                                                      &respond_specs,
-                                                      SDL_AUDIO_ALLOW_FORMAT_CHANGE);
-
+    speakerId = SDL_OpenAudioDevice(NULL,
+                                    0,
+                                    &request_specs,
+                                    &respond_specs,
+                                    SDL_AUDIO_ALLOW_FORMAT_CHANGE);
+    
     SDL_PauseAudioDevice(speakerId, 0);
+  }
+  
+  ~SDLSpeaker() {
+    SDL_PauseAudioDevice(speakerId, 1);
+    SDL_CloseAudioDevice(speakerId);
+
+    lms::release(timeSync);
+    lms::release(frameItems);
   }
   
 protected:
@@ -269,12 +281,15 @@ private:
 
 private:
   void start(const StreamMeta &meta) override {
+
   }
   
   void stop() override {
   }
   
 private:
+  SDL_AudioDeviceID speakerId;
+  
   AVStream *stream;
   TimeSync *timeSync;
   FramesBuffer<AudioFrameItem *> *frameItems;
@@ -285,12 +300,14 @@ class VideoRenderDriver : public RenderDriver {
 public:
   VideoRenderDriver(AVStream *stream, Render *videoRender, TimeSync *timeSync) {
     this->stream   = stream;
-    this->render   = videoRender;
-    this->timeSync = timeSync;
+    this->render   = lms::retain(videoRender);
+    this->timeSync = lms::retain(timeSync);
     this->buffer   = new FramesBuffer<AVFrame *>;
   }
   
   ~VideoRenderDriver() {
+    lms::release(render);
+    lms::release(timeSync);
     lms::release(buffer);
   }
   
@@ -300,7 +317,7 @@ public:
     double fps = av_q2d(stream->avg_frame_rate);
     double spf = 1.0 / fps; // second per frame
     
-    lms::dispatchAsyncPeriodically(mainQueue(), fps, [this, spf] {
+    fpsTimerId = lms::dispatchAsyncPeriodically(mainQueue(), fps, [this, spf] {
       AVFrame *frame = nullptr;
 
       // 从buffer中循环取出匹配当前播放时间的图像帧，或者buffer为空，则终止
@@ -348,8 +365,7 @@ public:
   }
   
   void stop() override {
-    LMSLogError("TODO: Cancel periodic job");
-    
+    lms::cancelPeriodicObj(mainQueue(), fpsTimerId);
     render->stop();
   }
   
@@ -368,6 +384,7 @@ private:
   AVStream *stream;
   Render   *render;
   TimeSync *timeSync;
+  PeriodicJobId fpsTimerId;
   FramesBuffer<AVFrame *> *buffer;
 };
 
@@ -463,11 +480,13 @@ Player::Player(PassiveMediaSource *s, Render *vrender) {
 }
 
 Player::~Player() {
+  assert(!vstream);
+  assert(!astream);
+
   lms::release(coordinator);
   lms::release(timesync);
-  lms::release(vstream);
-  lms::release(astream);
   lms::release(source);
+  lms::release(vrender);
 }
 
 void Player::play() {
@@ -493,7 +512,7 @@ void Player::play() {
 
       vstream = new Stream(meta, source, decoder, nullptr, driver);
     } else if (meta.mediaType == MediaTypeAudio) {
-      SDLSpeaker *speaker = new SDLSpeaker(stream, timesync);
+      SDLSpeaker *speaker = autoRelease(new SDLSpeaker(stream, timesync));
       LMSLogVerbose("RenderDriver: %p, for Audio", speaker);
       speaker->setDelegate(coordinator);
 
@@ -528,7 +547,10 @@ void Player::stop() {
   source->close();
 
   lms::release(vstream);
-  lms::release(coordinator);
+  vstream = nullptr;
+  
+  lms::release(astream);
+  astream = nullptr;
 }
 
 } // namespace lms

@@ -1,12 +1,15 @@
 #pragma once
 
+#include "LMSFoundation/Stacktrace.h"
 #include <atomic>
 #include <functional>
 #include <map>
 #include <string>
 #include <list>
+#include <set>
 #include <algorithm>
 
+#define LMS_TRACE_LEAKS_ENABLED 0
 
 namespace lms {
 
@@ -16,32 +19,47 @@ protected:
   virtual ~Object();
 
 public:
-  void retain();
-  void release();
-
+  void ref();
+  void unref();
+  
+  std::list<std::string> traces;
+  
 private:
   std::atomic<int> refCount;
 };
 
-void release(Object *object);
-void performAutoRelease(Object *object);
-
 template<class T>
 T retain(T object) {
-  if (object != nullptr) {
-    object->retain();
+  if (object == nullptr) {
+    return nullptr;
   }
+  
+#if (LMS_TRACE_LEAKS_ENABLED)
+  const char *backtrace = stacktrace_caller_frame_desc("R");
+  object->traces.push_back(backtrace);
+  free((void *)backtrace);
+#endif
+
+  object->ref();
   return object;
 }
 
+void release(Object *object);
+void autoReleaseObj(Object *object);
+
 template<class T>
 T autoRelease(T object) {
-  performAutoRelease(object);
+#if (LMS_TRACE_LEAKS_ENABLED)
+  const char *backtrace = stacktrace_caller_frame_desc("P");
+  object->traces.push_back(backtrace);
+  free((void *)backtrace);
+#endif
+
+  autoReleaseObj(object);
   return (T) object;
 }
 
 void drainAutoReleasePool();
-
 
 class Runnable : virtual public Object {
 public:
@@ -53,6 +71,7 @@ class DispatchQueue : virtual public Object {
 public:
   virtual void async(Runnable *runnable) = 0;
   virtual int asyncPeriodically(double period, Runnable *runnable) = 0;
+  virtual void cancelPeriodicalJob(int jobId) = 0;
 };
 
 
@@ -73,7 +92,9 @@ void dispatchAsync(DispatchQueue *queue, std::function<void()> lambda);
 typedef int PeriodicJobId;
 
 PeriodicJobId dispatchAsyncPeriodically(DispatchQueue *queue, double period, std::function<void()> lambda);
-void cancelPeriodicObj(PeriodicJobId jobId);
+void cancelPeriodicObj(DispatchQueue *queue, PeriodicJobId jobId);
+
+void stopPeriodicalQueues();
 
 DispatchQueue *mainQueue();
 
@@ -124,5 +145,6 @@ private:
 
 
 void dumpBytes(uint8_t *data, int size, int bytesPerLine);
+void dumpLeaks();
 
 }

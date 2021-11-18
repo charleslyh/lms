@@ -3,7 +3,7 @@
 #include <memory>
 #include <algorithm>
 
-static Uint32 customEventType;
+static Uint32 RunnableEvent;
 
 SDL_Window *mainWindow;
 
@@ -17,9 +17,8 @@ SDLApplication::SDLApplication(int argc, char **argv) {
   this->argv = argv;
 }
 
-
 void SDLApplication::run(SDLAppDelegate *delegate) {
-  customEventType = SDL_RegisterEvents(1);
+  RunnableEvent = SDL_RegisterEvents(1);
 
   // 创建一个SDL窗口用于在其中进行视频渲染
   mainWindow = SDL_CreateWindow("LMS Window",
@@ -39,7 +38,7 @@ void SDLApplication::run(SDLAppDelegate *delegate) {
       break;
     }
 
-    if (event.type == customEventType) {
+    if (event.type == RunnableEvent) {
       auto r = (lms::Runnable *)event.user.data1;
       r->run();
       lms::release(r);
@@ -47,37 +46,35 @@ void SDLApplication::run(SDLAppDelegate *delegate) {
 
     lms::drainAutoReleasePool();
   }
+  
+  // 清除那些已被分派，但未被执行的runnable任务
+  while(SDL_PollEvent(&event) == 1) {
+    if (event.type == RunnableEvent) {
+      lms::release((lms::Runnable *)event.user.data1);
+    }
+  }
 
   delegate->willTerminateApplication();
 }
 
 static
-void PostRunnable(lms::Runnable *runnable, bool skipRetain) {
+void PostRunnable(lms::Runnable *runnable) {
   SDL_Event event;
   SDL_zero(event);
   
-  if (!skipRetain) {
-    lms::retain(runnable);
-  }
-
-  // event是被异步执行的，autoReleasePool有可能先于runnable被执行前就被清理，即：
-  // 1. SDL_DispatchRunnable
-  // 2. lms::drainAutoReleasePool
-  // 3. runnable->run()
-  // 因此，需要手动持有runnable的引用，才能保证资源在run之后被正确释放
-  event.user.data1 = runnable;
+  event.type = RunnableEvent;
+  event.user.data1 = lms::retain(runnable);
   event.user.data2 = nullptr;
   event.user.code  = 0;
-  event.type = customEventType;
   SDL_PushEvent(&event);
 }
 
 void SDL_DispatchRunnable(lms::Runnable *runnable) {
-  PostRunnable(runnable, false);
+  PostRunnable(runnable);
 }
 
 Uint32 periodicTimerProc(Uint32 interval, lms::Runnable *runnable) {
-  PostRunnable(runnable, false);
+  PostRunnable(runnable);
   return interval;
 }
 

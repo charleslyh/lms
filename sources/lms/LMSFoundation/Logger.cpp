@@ -10,9 +10,21 @@ const int MaxBufferSize = 8192;
 
 class LogWriterConsole : public LogWriter {
 public:
+  LogWriterConsole() {
+    mtx = SDL_CreateMutex();
+  }
+  
+  ~LogWriterConsole() {
+    SDL_DestroyMutex(mtx);
+  }
+  
   void write(const char *log) override {
+    SDL_LockMutex(mtx);
     printf("%s", log);
-  }  
+    SDL_UnlockMutex(mtx);
+  }
+
+  SDL_mutex *mtx;
 };
 
 LogWriter *getLogWriter() {
@@ -54,7 +66,8 @@ void writeLogVargs(const char *fn, int ln, const char *func, LogLevel lv, const 
 
   Uint32 ms = SDL_GetTicks() % 1000;
 
-  len = snprintf(wptr, remainBufferSz, ".%03u %c/%s:%d/%s", ms, chLevel, fn, ln, func);
+  SDL_threadID threadId = SDL_ThreadID();
+  len = snprintf(wptr, remainBufferSz, ".%03u [%lx] %c/%s:%d/%s", ms, threadId, chLevel, fn, ln, func);
   wptr += len;
   remainBufferSz -= len;
   
@@ -70,6 +83,7 @@ void writeLogVargs(const char *fn, int ln, const char *func, LogLevel lv, const 
 
   snprintf(wptr, remainBufferSz, "\n");
 
+  
   getLogWriter()->write(buffer);
 }
 

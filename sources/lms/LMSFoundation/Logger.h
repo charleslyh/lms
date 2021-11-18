@@ -35,7 +35,7 @@ typedef enum {
 /*
  用户自定义日志记录器
  */
-class LogWriter : virtual public Object {
+class LogWriter {
 public:
   virtual void write(const char *log) = 0;
 };

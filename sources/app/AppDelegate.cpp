@@ -181,11 +181,21 @@ private:
   SDL_Rect           rect;
 };
 
-typedef struct {
+struct FPSTimer {
   bool           shouldQuit;
   double         period;
   lms::Runnable *runnable;
-} FPSTimer;
+  
+  FPSTimer(double period, lms::Runnable *r) {
+    this->shouldQuit = false;
+    this->period     = period;
+    this->runnable   = lms::retain(r);
+  }
+  
+  ~FPSTimer() {
+    lms::release(runnable);
+  }
+};
 
 static int fpsTimerFunc(FPSTimer *timer) {
   const double delayPerFrame = 1.0 / timer->period * 1000;
@@ -221,10 +231,15 @@ static int fpsTimerFunc(FPSTimer *timer) {
       }
     } while(SDL_GetTicks() < expectedBreakPoint);
   }
+
+  delete timer;
 }
 
+static FPSTimer *__timer;
+static SDL_Thread* __timerThread;
+
 class PlayerAppDelegate: public SDLAppDelegate, public lms::DispatchQueue {
-public:
+public:  
   void didFinishLaunchingApplication(int argc, char **argv) override {
     lms::init({this});
     lms::setLogLevel(lms::LogLevelVerbose);
@@ -247,8 +262,14 @@ public:
   }
   
   int asyncPeriodically(double period, lms::Runnable *runnable) override {
-    lms::retain(runnable);
-    SDL_CreateThread((SDL_ThreadFunction)fpsTimerFunc, "FPSTimer", new FPSTimer{false, period, runnable});
+    assert(__timerThread == nullptr);
+    __timer = new FPSTimer(period, runnable);
+    __timerThread = SDL_CreateThread((SDL_ThreadFunction)fpsTimerFunc, "FPSTimer", __timer);
+  }
+  
+  void cancelPeriodicalJob(int jobId) override {
+    __timer->shouldQuit = true;
+    SDL_WaitThread(__timerThread, nullptr);
   }
 
 private:
@@ -258,7 +279,13 @@ private:
 
 int main(int argc, char *argv[]) {
   SDLApplication app(argc, argv);
-  PlayerAppDelegate delegate;
-  app.run(&delegate);
+  
+  // 通过添加{}来明确delegate的释放时机，避免DumpLeaks误认为delegate为泄露资源
+  {
+    PlayerAppDelegate delegate;
+    app.run(&delegate);
+  }
+  
+  lms::dumpLeaks();
 }
 

@@ -23,7 +23,7 @@ public:
     size_t sz;
     SDL_LockMutex(mtx);
     {
-      sz = cachedFrames.size();
+      sz = items.size();
     }
     SDL_UnlockMutex(mtx);
     return sz;
@@ -34,10 +34,10 @@ public:
     
     SDL_LockMutex(mtx);
     {
-      if (cachedFrames.empty()) {
+      if (items.empty()) {
       } else {
-        frame = cachedFrames.front();
-        cachedFrames.pop_front();
+        frame = items.front();
+        items.pop_front();
       }
     }
     SDL_UnlockMutex(mtx);
@@ -48,7 +48,7 @@ public:
   void pushFront(T frame) {
     SDL_LockMutex(mtx);
     {
-      cachedFrames.push_back(frame);
+      items.push_back(frame);
     }
     SDL_UnlockMutex(mtx);
   }
@@ -58,13 +58,13 @@ public:
     
     SDL_LockMutex(mtx);
     {
-      cachedFrames.push_back(frame);
+      items.push_back(frame);
     }
     SDL_UnlockMutex(mtx);
   }
 
 private:
-  std::list<T> cachedFrames;
+  std::list<T> items;
   SDL_mutex *mtx;
 };
 
