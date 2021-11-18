@@ -18,14 +18,17 @@ protected:
   Object();
   virtual ~Object();
 
-public:
+private:
   void ref();
-  void unref();
-  
-  std::list<std::string> traces;
-  
+  void unref(bool postphone);
+    
 private:
   std::atomic<int> refCount;
+  
+  // 赋予lms级别的几个资源管理方法以访问权限，以便调用者可以用下面几个更加便利的方法来进行引用计数管理
+  template<class T> friend T retain(T);
+  template<class T> friend T autoRelease(T);
+  friend void release(Object*);
 };
 
 template<class T>
@@ -34,29 +37,27 @@ T retain(T object) {
     return nullptr;
   }
   
-#if (LMS_TRACE_LEAKS_ENABLED)
-  const char *backtrace = stacktrace_caller_frame_desc("R");
-  object->traces.push_back(backtrace);
-  free((void *)backtrace);
-#endif
-
   object->ref();
   return object;
 }
 
-void release(Object *object);
-void autoReleaseObj(Object *object);
+inline void release(Object* object) {
+  if (object == nullptr) {
+    return;
+  }
+  
+  object->unref(false);
+  return object;
+}
 
 template<class T>
 T autoRelease(T object) {
-#if (LMS_TRACE_LEAKS_ENABLED)
-  const char *backtrace = stacktrace_caller_frame_desc("P");
-  object->traces.push_back(backtrace);
-  free((void *)backtrace);
-#endif
-
-  autoReleaseObj(object);
-  return (T) object;
+  if (object == nullptr) {
+    return;
+  }
+  
+  object->unref(true);
+  return object;
 }
 
 void drainAutoReleasePool();
@@ -134,9 +135,9 @@ public:
   
 protected:
   void deliverFrame(Frame *frame) {
-    std::for_each(acceptors.begin(), acceptors.end(), [this, frame](FrameAcceptor *acc) {
+    for (auto acc : acceptors) {
       acc->didReceiveFrame(frame);
-    });
+    };
   }
   
 private:

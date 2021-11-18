@@ -200,7 +200,7 @@ public:
     request_specs.samples  = 1024;
     request_specs.callback = (SDL_AudioCallback) loadAudioData;
     request_specs.userdata = this;
-    
+
     speakerId = SDL_OpenAudioDevice(NULL,
                                     0,
                                     &request_specs,
@@ -517,7 +517,7 @@ void Player::play() {
       speaker->setDelegate(coordinator);
 
       Decoder *decoder = autoRelease(createDecoder(meta));
-
+      
       SDLAudioResampler *resampler = autoRelease(new SDLAudioResampler(stream));
       astream = new Stream(meta, source, decoder, resampler, speaker);
     }

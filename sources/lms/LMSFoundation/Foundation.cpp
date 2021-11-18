@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cassert>
 #include <sstream>
+#include <unordered_map>
 
 extern "C" {
 #include <SDL2/SDL.h>
@@ -14,7 +15,7 @@ namespace lms {
 
 #if (LMS_TRACE_LEAKS_ENABLED)
 class LeaksTracer {
-  std::set<Object *> objects;
+  std::unordered_map<Object *, std::list<std::string>> traces;
   SDL_mutex *mtx;
   
 public:
@@ -28,26 +29,39 @@ public:
   
   void add(Object *obj) {
     SDL_LockMutex(mtx);
-    objects.insert(obj);
+    traces[obj] = std::list<std::string>();
     SDL_UnlockMutex(mtx);
   }
   
   void remove(Object *obj) {
     SDL_LockMutex(mtx);
-    objects.erase(obj);
+    traces.erase(obj);
+    SDL_UnlockMutex(mtx);
+  }
+  
+  void mark(Object *obj, const char *type, int offset) {
+    SDL_LockMutex(mtx);
+    {
+      bool objExist = (traces.find(obj) != traces.end());
+      if (objExist) {
+        std::list<std::string>& itsTraces = traces[obj];
+        const char *trace = stacktrace_caller_frame_desc(type, offset + 1);
+        itsTraces.push_back(trace);
+        free((void *)trace);
+      }
+    }
     SDL_UnlockMutex(mtx);
   }
 
   void dumpLeaks() {
-    LMSLogVerbose("Leaks: %d", (int)objects.size());
+    LMSLogVerbose("Leaks: %d", (int)traces.size());
     
-    if (!objects.empty()) {
+    if (!traces.empty()) {
       LMSLogVerbose("--- Start ---");
-      for (auto obj = objects.begin(); obj != objects.end(); ++obj) {
-        LMSLogVerbose("obj: %p", *obj);
-        Object *objptr = *obj;
-        for (auto s = objptr->traces.begin(); s != objptr->traces.end(); ++s) {
-          LMSLogVerbose("  %s", s->c_str());
+      for (auto item : traces) {
+        LMSLogVerbose("obj: %p", item.first);
+        for (auto& trace : item.second) {
+          LMSLogVerbose("  %s", trace.c_str());
         }
       }
       LMSLogVerbose("--- End ---");
@@ -56,12 +70,14 @@ public:
 };
 
 static LeaksTracer __leaksTracer;
-#  define TraceObject(obj)   __leaksTracer.add(obj)
-#  define UntraceObject(obj) __leaksTracer.remove(obj)
-#  define DumpLeaks()        __leaksTracer.dumpLeaks()
+#  define MarkObject(obj, type, offset) __leaksTracer.mark(obj, type, offset)
+#  define TraceObject(obj)              __leaksTracer.add(obj)
+#  define UntraceObject(obj)            __leaksTracer.remove(obj)
+#  define DumpLeaks()                   __leaksTracer.dumpLeaks()
 #else
 #  define TraceObject(obj)
 #  define UntraceObject(obj)
+#  define MarkObject(obj, type, offset)
 #  define DumpLeaks()
 #endif // LMS_TRACE_LEAKS_ENABLED
 
@@ -70,13 +86,12 @@ void dumpLeaks() {
 }
 
 Object::Object() :refCount(1) {
-#if (LMS_TRACE_LEAKS_ENABLED)
-  const char *backtrace = stacktrace_caller_frame_desc("N");
-  traces.push_back(backtrace);
-  free((void *)backtrace);
-#endif
-  
   TraceObject(this);
+  
+  // 这里只能最终到下一级子类名，如果有多级继承，则无法准确还原，因此应尽可能减少继承层级
+  // 0: 当前Object的构造函数
+  // 1: 子类构造函数
+  MarkObject(this, "N", 1);
 }
 
 Object::~Object() {
@@ -85,32 +100,12 @@ Object::~Object() {
 
 void Object::ref() {
   refCount += 1;
-}
-
-void Object::unref() {
-  int newCount = (refCount -= 1);
   
-  if (newCount < 0) {
-    assert(false);
-  }
-
-  if (newCount == 0) {
-    delete this;
-  }
-}
-
-void release(Object *object) {
-  if (object == nullptr) {
-    return;
-  }
-
-#if (LMS_TRACE_LEAKS_ENABLED)
-  const char *backtrace = stacktrace_caller_frame_desc("U");
-  object->traces.push_back(backtrace);
-  free((void *)backtrace);
-#endif
-
-  object->unref();
+  // 仅当ref方法全局只有 lms::retain 一个调用者，则能保证栈跟踪的正确性
+  // 0: 当前ref函数
+  // 1: lms::retain
+  // 2: lms::retain的调用者
+  MarkObject(this, "R", 2);
 }
 
 class Core {
@@ -129,28 +124,41 @@ public:
   std::list<Object *> autoReleasePool;
   SDL_mutex *arpMtx;
   
-  DispatchQueue       *mainQueue;
+  DispatchQueue *mainQueue;
 };
 
 static Core *core = nullptr;
 
+void Object::unref(bool postphone) {
+  if (postphone) {
+    // 0: 当前unref(true)函数
+    // 1: lms::autoRelease函数
+    // 2: lms::autoRelease的调用者
+    MarkObject(this, ".", 2);
+    core->autoReleasePool.push_back(this);
+  } else {
+    int newCount = (refCount -= 1);
+    assert(newCount >= 0); // < 0 意味着ref、unref不匹配：unref过多
 
-void autoReleaseObj(Object *object) {
-  if (object == nullptr) {
-    return;
+    if (newCount <= 0) {
+      delete this;
+    } else {
+      // 仅当还无法真正delete时，才有必要进行跟踪
+      // 0: 当前unref(false)函数
+      // 1: lms::release函数
+      // 2: lms::release的调用者
+      MarkObject(this, "U", 2);
+    }
   }
-
-  core->autoReleasePool.push_back(object);
 }
-
 
 void drainAutoReleasePool() {
   if (core->autoReleasePool.empty()) {
     return;
   }
  
-  for (auto it = core->autoReleasePool.begin(); it != core->autoReleasePool.end(); it++) {
-    lms::release(*it);
+  for (auto obj : core->autoReleasePool) {
+    lms::release(obj);
   }
 
   core->autoReleasePool.clear();

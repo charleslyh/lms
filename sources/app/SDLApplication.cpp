@@ -47,7 +47,7 @@ void SDLApplication::run(SDLAppDelegate *delegate) {
     lms::drainAutoReleasePool();
   }
   
-  // 清除那些已被分派，但未被执行的runnable任务
+  // 清除那些已被分派，但未被执行的runnable任务。否则会造成资源泄漏
   while(SDL_PollEvent(&event) == 1) {
     if (event.type == RunnableEvent) {
       lms::release((lms::Runnable *)event.user.data1);

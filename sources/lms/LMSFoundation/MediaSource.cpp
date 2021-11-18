@@ -13,12 +13,12 @@ void MediaSource::removePacketAcceptor(PacketAcceptor *acceptor) {
 }
 
 void MediaSource::deliverPacket(Packet *pkt) {
-  std::for_each(begin(acceptors), end(acceptors), [this, pkt] (const std::pair<int, PacketAcceptor *>& item) {
-    auto avpkt = (AVPacket *)pkt;
+  auto avpkt = (AVPacket *)pkt;
+  for (auto item : acceptors) {
     if (item.first == StreamIdAny || item.first == avpkt->stream_index) {
       item.second->didReceivePacket(pkt);
     }
-  });
+  };
 }
 
 } // namespace lms

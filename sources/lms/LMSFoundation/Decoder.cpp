@@ -2,7 +2,6 @@
 #include "LMSFoundation/Logger.h"
 extern "C" {
 #include <libavcodec/avcodec.h>
-#include <libavformat/avformat.h>
 }
 
 namespace lms {
@@ -69,11 +68,7 @@ DecoderMeta FFMDecoder::meta() {
 }
 
 void FFMDecoder::didReceivePacket(Packet *packet) {
-  LMSLogVerbose("packet: %p", packet);
-  
-  if (packet == nullptr) {
-    return;
-  }
+  assert(packet != nullptr);
   
   auto srcpkt = (AVPacket *)packet;
   AVPacket *avpkt = av_packet_alloc();
