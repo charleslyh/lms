@@ -9,7 +9,9 @@
 #include <set>
 #include <algorithm>
 
-#define LMS_TRACE_LEAKS_ENABLED 0
+#ifndef LMS_TRACE_LEAKS_ENABLED // 可能在外部构建命令中通过 -DLMS_TRACE_LEAKS_ENABLED=？指定，从而避免代码修改
+#  define LMS_TRACE_LEAKS_ENABLED 0
+#endif
 
 namespace lms {
 
