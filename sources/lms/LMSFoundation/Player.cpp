@@ -206,12 +206,10 @@ public:
                                     &request_specs,
                                     &respond_specs,
                                     SDL_AUDIO_ALLOW_FORMAT_CHANGE);
-    
-    SDL_PauseAudioDevice(speakerId, 0);
+
   }
   
   ~SDLSpeaker() {
-    SDL_PauseAudioDevice(speakerId, 1);
     SDL_CloseAudioDevice(speakerId);
 
     lms::release(timeSync);
@@ -281,10 +279,11 @@ private:
 
 private:
   void start(const StreamMeta &meta) override {
-
+    SDL_PauseAudioDevice(speakerId, 0);
   }
   
   void stop() override {
+    SDL_PauseAudioDevice(speakerId, 1);
   }
   
 private:
@@ -324,29 +323,38 @@ public:
       while(true) {
         frame = (AVFrame *)buffer->popFront();
         if (frame == nullptr) {
-          break;
+          LMSLogWarning("No video frame!");
+          return;
         }
 
         double frameTime = frame->best_effort_timestamp * av_q2d(stream->time_base);
         double playingTime = timeSync->getPlayingTime();
 
-        // deviation > 0 表示视频播放领先于音频的播放时间
-        // deviation < 0 表示视频播放落后于音频的播放时间
+        // deviation > 0 表示当前视频帧的应播时间大于当前播放时间（待播帧）
+        // deviation < 0 表示当前视频帧的应播时间小于当前播放时间（迟滞帧），超过一定时间（tollerance）则认为是过期帧
         double deviation = frameTime - playingTime;
 
         LMSLogVerbose("Video frame popped | pts:%lld, frameTime:%.2lf, playingTime:%.2lf, deviation:%.3lf(%.2lf frames)",
                       frame->pts, frameTime, playingTime, deviation, deviation / spf);
-        
-        if (deviation > -spf) {
-          break;
+
+        double tollerance = spf / 2.0;
+        if (deviation < -tollerance) {
+          // 丢弃过期帧，继续下一帧（如果有）的处理
+          LMSLogWarning("Video frame dropped");
+          continue;
+        } else if (deviation > tollerance) {
+          // 该帧尚未到播放时间，将其重入等待队列
+          buffer->pushFront(frame);
+          
+          // 如果队列头的帧都未到播放时间，应认为后续帧也肯定未到播放时间，所以应直接退出渲染流程
+          LMSLogWarning("Video frame refilled");
+          return;
         } else {
-          // 当deviation小于一帧的时间间隔时，可以认为它已经远落后于播放进度，因此应予以丢弃，并立即尝试处理下一帧
-          LMSLogWarning("Video frame dropped | pts:%lld, deviation:%.3lf(%.2lf frames)", frame->pts, deviation, deviation / spf);
+          break;
         }
       }
 
       if (frame == nullptr) {
-        LMSLogWarning("No video frame available!");
         return;
       }
 

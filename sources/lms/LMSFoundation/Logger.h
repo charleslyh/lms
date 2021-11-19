@@ -1,4 +1,5 @@
 #pragma once
+
 #include "LMSFoundation/Foundation.h"
 
 #if defined(__FILE_NAME__)

@@ -3,6 +3,10 @@
 #include <memory>
 #include <algorithm>
 
+extern "C" {
+#include <SDL2/SDL.h>
+}
+
 static Uint32 RunnableEvent;
 
 SDL_Window *mainWindow;

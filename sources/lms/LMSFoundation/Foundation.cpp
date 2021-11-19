@@ -13,7 +13,7 @@ extern "C" {
 
 namespace lms {
 
-#if (LMS_TRACE_LEAKS_ENABLED)
+#if (LMS_LEAKS_TRACING)
 class LeaksTracer {
   std::unordered_map<Object *, std::list<std::string>> traces;
   SDL_mutex *mtx;
@@ -79,7 +79,7 @@ static LeaksTracer __leaksTracer;
 #  define UntraceObject(obj)
 #  define MarkObject(obj, type, offset)
 #  define DumpLeaks()
-#endif // LMS_TRACE_LEAKS_ENABLED
+#endif // LMS_LEAKS_TRACING
 
 void dumpLeaks() {
   DumpLeaks();
@@ -242,19 +242,6 @@ PeriodicJobId dispatchAsyncPeriodically(DispatchQueue *queue, double period, std
 
 void cancelPeriodicObj(DispatchQueue *queue, PeriodicJobId jobId) {
   queue->cancelPeriodicalJob(jobId);
-}
-
-void dumpBytes(uint8_t *data, int size, int bytesPerLine) {
-  for (int i = 0; i < size; ++i) {
-    printf("%02X ", data[i]);
-    if ((i + 1) % bytesPerLine == 0) {
-      printf("\n");
-    }
-  }
-
-  if (size % bytesPerLine != 0) {
-    printf("\n");
-  }
 }
 
 }

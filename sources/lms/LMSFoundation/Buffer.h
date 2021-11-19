@@ -1,4 +1,5 @@
 #pragma once
+
 #include "LMSFoundation/Foundation.h"
 #include "LMSFoundation/Decoder.h"
 #include "LMSFoundation/Logger.h"
@@ -48,7 +49,7 @@ public:
   void pushFront(T frame) {
     SDL_LockMutex(mtx);
     {
-      items.push_back(frame);
+      items.push_front(frame);
     }
     SDL_UnlockMutex(mtx);
   }

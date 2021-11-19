@@ -9,8 +9,8 @@
 #include <set>
 #include <algorithm>
 
-#ifndef LMS_TRACE_LEAKS_ENABLED // 可能在外部构建命令中通过 -DLMS_TRACE_LEAKS_ENABLED=？指定，从而避免代码修改
-#  define LMS_TRACE_LEAKS_ENABLED 0
+#ifndef LMS_LEAKS_TRACING // 可能在外部构建命令中通过 -DLMS_LEAKS_TRACING=？指定，从而避免代码修改
+#  define LMS_LEAKS_TRACING 0
 #endif
 
 namespace lms {
@@ -43,6 +43,7 @@ T retain(T object) {
   return object;
 }
 
+// 使用inline以避免链接过程提示duplicate symbol错误
 inline void release(Object* object) {
   if (object == nullptr) {
     return;
@@ -147,7 +148,6 @@ private:
 };
 
 
-void dumpBytes(uint8_t *data, int size, int bytesPerLine);
 void dumpLeaks();
 
 }
