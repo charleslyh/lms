@@ -24,4 +24,6 @@ target_sources(LMSFoundation
     Render.cpp
     Render.h
     stacktrace.h
+    Packet.h
+    Packet.cpp
 )

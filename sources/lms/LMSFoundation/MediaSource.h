@@ -1,6 +1,7 @@
 #pragma once
 
 #include "LMSFoundation/Foundation.h"
+#include "LMSFoundation/Packet.h"
 extern "C" {
   #include <libavformat/avformat.h>
 }
@@ -28,6 +29,7 @@ struct StreamMeta {
 };
 
 class MediaSource;
+class Packet;
 
 class PacketAcceptor : virtual public Object {
 public:

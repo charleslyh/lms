@@ -2,7 +2,7 @@
 extern "C" {
   #include <SDL2/SDL.h>
 }
-#include <time.h>
+#include <sys/time.h>
 
 namespace lms {
 
@@ -24,6 +24,14 @@ public:
     SDL_UnlockMutex(mtx);
   }
 
+private:
+  // printf是非线程安全的，所以需要手工使用一个互斥量来解决串行输出的问题。否则，会导致内容交错，如假设有aaaa,bbbb两行日志
+  // 正确输出应该是
+  //   aaaa
+  //   bbbb
+  // 可能的输出
+  //   aabbbb
+  //   aa
   SDL_mutex *mtx;
 };
 
@@ -40,7 +48,7 @@ void setLogLevel(LogLevel logLevel) {
 
 static
 void writeLogVargs(const char *fn, int ln, const char *func, LogLevel lv, const char *fmt, va_list vargs) {
-  const char levelTags[] = {
+  constexpr char levelTags[] = {
     [LogLevelVerbose]  = 'V',
     [LogLevelDebug]    = 'D',
     [LogLevelInfo]     = 'I',
@@ -55,19 +63,18 @@ void writeLogVargs(const char *fn, int ln, const char *func, LogLevel lv, const 
   char *wptr = buffer;
   int remainBufferSz = MaxBufferSize;
 
-  time_t ts;
-  struct tm *info;
-  char strDatetime[80];
-  time(&ts);
-  info = localtime(&ts);
-  int len = (int)strftime(wptr, remainBufferSz, "%Y-%m-%d %H:%M:%S", info);
+  // https://www.delftstack.com/howto/cpp/how-to-get-time-in-milliseconds-cpp/
+  struct timeval tv{};
+  gettimeofday(&tv, nullptr);
+  
+  struct tm info;
+  localtime_r(&tv.tv_sec, &info);
+  int len = (int)strftime(wptr, remainBufferSz, "%Y-%m-%d %H:%M:%S", &info);
   wptr += len;
   remainBufferSz -= len;
 
-  Uint32 ms = SDL_GetTicks() % 1000;
-
   SDL_threadID threadId = SDL_ThreadID();
-  len = snprintf(wptr, remainBufferSz, ".%03u [%lx] %c/%s:%d/%s", ms, threadId, chLevel, fn, ln, func);
+  len = snprintf(wptr, remainBufferSz, ".%03u %c/[%lx]/%s:%d/%s", tv.tv_usec / 1000, chLevel, threadId, fn, ln, func);
   wptr += len;
   remainBufferSz -= len;
   
@@ -83,7 +90,6 @@ void writeLogVargs(const char *fn, int ln, const char *func, LogLevel lv, const 
 
   snprintf(wptr, remainBufferSz, "\n");
 
-  
   getLogWriter()->write(buffer);
 }
 

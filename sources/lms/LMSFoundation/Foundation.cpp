@@ -46,7 +46,7 @@ public:
       if (objExist) {
         std::list<std::string>& itsTraces = traces[obj];
         const char *trace = stacktrace_caller_frame_desc(type, offset + 1);
-        itsTraces.push_back(trace);
+        itsTraces.push_back("");
         free((void *)trace);
       }
     }

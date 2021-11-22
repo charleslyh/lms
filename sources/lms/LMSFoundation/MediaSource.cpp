@@ -1,4 +1,5 @@
 #include "LMSFoundation/MediaSource.h"
+#include "LMSFoundation/Packet.h"
 
 namespace lms {
 
@@ -12,11 +13,10 @@ void MediaSource::removePacketAcceptor(PacketAcceptor *acceptor) {
   });
 }
 
-void MediaSource::deliverPacket(Packet *pkt) {
-  auto avpkt = (AVPacket *)pkt;
+void MediaSource::deliverPacket(Packet *packet) {
   for (auto item : acceptors) {
-    if (item.first == StreamIdAny || item.first == avpkt->stream_index) {
-      item.second->didReceivePacket(pkt);
+    if (item.first == StreamIdAny || item.first == packet->streamIndex) {
+      item.second->didReceivePacket(packet);
     }
   };
 }

@@ -75,6 +75,9 @@ static inline const char* stacktrace_caller_frame_desc(const char *prefix, int o
     snprintf(desc, desclen, "[%s] %s", prefix, caller_symbol);
   }
   
+  free(funcname);
+  free(symbollist);
+  
   return desc;
 }
 

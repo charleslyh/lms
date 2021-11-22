@@ -106,7 +106,6 @@ DispatchQueue *createDispatchQueue(const char *queueName);
 
 typedef std::map<std::string, void*> Metadata;
 typedef void Frame;
-typedef void Packet;
 
 class FrameAcceptor : virtual public Object {
 public:

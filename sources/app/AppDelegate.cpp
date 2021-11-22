@@ -5,6 +5,7 @@
 #include "LMSFoundation/Render.h"
 #include "LMSFoundation/Logger.h"
 #include "LMSFoundation/Buffer.h"
+#include "LMSFoundation/Packet.h"
 #include "SDLApplication.h"
 
 extern "C" {
@@ -14,6 +15,7 @@ extern "C" {
 }
 
 #include <cmath>
+#include <inttypes.h>
 
 
 class VideoFile : public lms::PassiveMediaSource {
@@ -72,15 +74,45 @@ public:
   }
 
   void loadPackets(int numberRequested) override {
-    LMSLogVerbose("numberRequested: %d", numberRequested);
-
+    LMSLogVerbose("loadPackets: requested=%d", numberRequested);
+    
+    class AVPacketHolder : public lms::ResourceHolder {
+    protected:
+      void* retain(void *object) override {
+        return object;
+      }
+      
+      void release(void *object) override {
+        av_packet_unref((AVPacket *)object);
+      }
+    };
+    
     for (int i = 0; i< numberRequested; i += 1) {
       dispatchAsync(lms::mainQueue(), [this] () {
-        AVPacket packet;
-        int rt = av_read_frame(context, &packet);
+        AVPacket *avpkt = av_packet_alloc();
+        int rt = av_read_frame(context, avpkt);
         if (rt >= 0) {
-          deliverPacket(&packet);
-          av_packet_unref(&packet);
+          LMSLogVerbose("AVPacket loaded: st=%d, flags=0x%-2x, dts=%" PRIu64
+                        ", pts=%" PRIu64 ", dur=%" PRIu64 ", sz=%-6d",
+                        avpkt->stream_index,
+                        avpkt->flags,
+                        avpkt->dts,
+                        avpkt->pts,
+                        avpkt->duration,
+                        avpkt->size);
+  
+          
+          lms::ResourceHolder *holder = new AVPacketHolder;
+          lms::Packet *pkt = new lms::Packet(avpkt, holder);
+          pkt->streamIndex = avpkt->stream_index;
+          pkt->data        = avpkt->data;
+          pkt->size        = avpkt->size;
+          pkt->pts         = avpkt->pts;
+
+          deliverPacket(pkt);
+
+          lms::release(pkt);
+          lms::release(holder);
         }
       
         return 0;
@@ -238,6 +270,8 @@ static int fpsTimerFunc(FPSTimer *timer) {
 static FPSTimer *__timer;
 static SDL_Thread* __timerThread;
 
+static VideoFile *src;
+
 class PlayerAppDelegate: public SDLAppDelegate, public lms::DispatchQueue {
 public:  
   void didFinishLaunchingApplication(int argc, char **argv) override {
@@ -247,11 +281,18 @@ public:
     auto src = lms::autoRelease(new VideoFile(argv[1]));
     player = new lms::Player(src, lms::autoRelease(new SDLView));
     player->play();
+    
+//    src = new VideoFile(argv[1]);
+//    src->open();
+//    src->loadPackets(10000);
   }
 
   void willTerminateApplication() override {
     player->stop();
     lms::release(player);
+    
+//    src->close();
+//    lms::release(src);
 
     lms::unInit();
   }

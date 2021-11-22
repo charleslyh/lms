@@ -9,17 +9,11 @@
 #endif
 
 #ifdef _MSC_VER
-/*
- * ref: https://docs.microsoft.com/en-us/previous-versions/visualstudio/visual-studio-2010/ms235402(v=vs.100)
- */
-#define _FORMAT_CHECKER_(archetype, fmt_index, first_to_check)
+/* ref: https://docs.microsoft.com/en-us/previous-versions/visualstudio/visual-studio-2010/ms235402(v=vs.100) */
+#  define _FORMAT_CHECKER_(arc, fmt_idx, first_to_check)
 #else
-/*
- * Check format string of printf like functions
- * ref: https://gcc.gnu.org/onlinedocs/gcc-4.0.1/gcc/Function-Attributes.html#Function-Attributes
- */
-#define _FORMAT_CHECKER_(archetype, fmt_index, first_to_check) \
-  __attribute__((format(archetype, (fmt_index), (first_to_check))))
+   /* https://gcc.gnu.org/onlinedocs/gcc-4.0.1/gcc/Function-Attributes.html#Function-Attributes */
+#  define _FORMAT_CHECKER_(arc, fmt_idx, first_to_check) __attribute__((format(arc, (fmt_idx), (first_to_check))))
 #endif /* _MSVC_VER */
 
 namespace lms {

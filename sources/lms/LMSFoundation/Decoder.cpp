@@ -1,5 +1,6 @@
 #include "LMSFoundation/Decoder.h"
 #include "LMSFoundation/Logger.h"
+#include "LMSFoundation/Packet.h"
 extern "C" {
 #include <libavcodec/avcodec.h>
 }
@@ -67,15 +68,22 @@ DecoderMeta FFMDecoder::meta() {
   };
 }
 
-void FFMDecoder::didReceivePacket(Packet *packet) {
-  assert(packet != nullptr);
+void FFMDecoder::didReceivePacket(Packet *pkt) {
+  assert(pkt != nullptr);
+
+  lms::retain(pkt);
   
-  auto srcpkt = (AVPacket *)packet;
-  AVPacket *avpkt = av_packet_alloc();
-  av_packet_ref(avpkt, srcpkt);
-  
-  dispatchAsync(mainQueue(), [this, avpkt]() {
-    notifyDecoderEvent(avpkt, 0);
+  dispatchAsync(mainQueue(), [this, pkt]() {
+    notifyDecoderEvent(pkt, 0);
+       
+    AVPacket sharedPacket;
+    memset(&sharedPacket, 0, sizeof(sharedPacket));
+   
+    AVPacket *avpkt = &sharedPacket;
+    sharedPacket.data = pkt->data;
+    sharedPacket.size = pkt->size;
+    sharedPacket.pts  = pkt->pts;
+    
     LMSLogVerbose("Begin decoding frame: %p", avpkt);
 
     int rt = avcodec_send_packet(codecContext, avpkt);
@@ -94,14 +102,13 @@ void FFMDecoder::didReceivePacket(Packet *packet) {
       }
       
       deliverFrame(frame);
-      
       av_frame_unref(frame);
     }
     
     LMSLogVerbose("End decoding frame: %p", avpkt);
-    notifyDecoderEvent(avpkt, 1);
+    notifyDecoderEvent(pkt, 1);
     
-    av_packet_unref(avpkt);
+    lms::release(pkt);
     
     return 0;
   });
