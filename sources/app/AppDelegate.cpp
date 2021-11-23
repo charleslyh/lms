@@ -177,26 +177,80 @@ protected:
     auto frame = (AVFrame *)frm;
     
     double ts = frame->best_effort_timestamp * av_q2d(st->time_base);
+    
+    SDL_DestroyTexture(texture);
+    
+    // calc rect size & position
+    // 看ratio
+    double videoRatio = st->codecpar->width * 1.0 / st->codecpar->height;
+    double windowRatio = mainWindowWidth * 1.0 / mainWindowHeight;
+    
+    int rectWidth;
+    int rectHeight;
+    int rectX = 0;
+    int rectY = 0;
+    
+    if (videoRatio < windowRatio) {
+      //based on height
+      rectHeight = mainWindowHeight;
+      rectWidth = videoRatio * rectHeight;
+      rectX = (mainWindowWidth - rectWidth) / 2;
+    } else {
+      //based on width
+      rectWidth = mainWindowWidth;
+      rectHeight = rectWidth / videoRatio;
+      rectY = (mainWindowHeight - rectHeight) / 2;
+    }
+    
+    sws_ctx = sws_getCachedContext(sws_ctx,
+                                   st->codecpar->width,
+                                   st->codecpar->height,
+                             (AVPixelFormat)st->codecpar->format,
+                             rectWidth,
+                             rectHeight,
+                             AV_PIX_FMT_YUV420P,
+                             SWS_BILINEAR,
+                             NULL,
+                             NULL,
+                             NULL);
+    
+    int numBytes = av_image_get_buffer_size(AV_PIX_FMT_YUV420P,
+                                            rectWidth,
+                                            rectHeight,
+                                            32);
+    
+    buffer = (uint8_t *)av_malloc(numBytes * sizeof(uint8_t));
+    
+    AVFrame *y = av_frame_alloc();
+    av_image_fill_arrays(y->data, y->linesize, buffer, AV_PIX_FMT_YUV420P, rectWidth, rectHeight, 32);
        
     LMSLogVerbose("Start rendering video frame | ts:%.2lf, pts:%lld", ts, frame->pts);
-    rect.x = 0;
-    rect.y = 0;
-    rect.w = st->codecpar->width;
-    rect.h = st->codecpar->height;
+    rect.x = rectX;
+    rect.y = rectY;
+    rect.w = rectWidth;
+    rect.h = rectHeight;
+    
+    texture = SDL_CreateTexture(renderer,
+                                SDL_PIXELFORMAT_YV12,
+                                SDL_TEXTUREACCESS_STREAMING,
+                                mainWindowWidth,
+                                mainWindowHeight);
 
     sws_scale(sws_ctx,
               (uint8_t const *const *)frame->data,
               frame->linesize,
               0,
               st->codecpar->height,
-              yuv->data,
-              yuv->linesize);
+              y->data,
+              y->linesize);
 
     SDL_UpdateYUVTexture(texture,
                          &rect,
-                         yuv->data[0], yuv->linesize[0],
-                         yuv->data[1], yuv->linesize[1],
-                         yuv->data[2], yuv->linesize[2]);
+                         y->data[0], y->linesize[0],
+                         y->data[1], y->linesize[1],
+                         y->data[2], y->linesize[2]);
+    
+    av_frame_free(&y);
 
     SDL_RenderClear(renderer);
     SDL_RenderCopy(renderer, texture, NULL, NULL);

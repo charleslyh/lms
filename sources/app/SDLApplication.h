@@ -27,3 +27,5 @@ int SDL_ScheduleRunnable(int delayMS, lms::Runnable *runnalbe);
 
 typedef struct SDL_Window SDL_Window;
 extern SDL_Window *mainWindow;
+extern int mainWindowWidth;
+extern int mainWindowHeight;

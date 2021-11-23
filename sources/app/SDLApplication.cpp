@@ -10,6 +10,8 @@ extern "C" {
 static Uint32 RunnableEvent;
 
 SDL_Window *mainWindow;
+int mainWindowWidth  = 1920/2;
+int mainWindowHeight = 1080/2;
 
 SDLApplication::SDLApplication(int argc, char **argv) {
   if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER)) {
@@ -30,7 +32,7 @@ void SDLApplication::run(SDLAppDelegate *delegate) {
                                 SDL_WINDOWPOS_CENTERED,
                                 1920 / 2,
                                 1080 / 2,
-                                SDL_WINDOW_METAL | SDL_WINDOW_ALLOW_HIGHDPI);
+                                SDL_WINDOW_METAL | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE);
   SDL_GL_SetSwapInterval(1);
 
   delegate->didFinishLaunchingApplication(argc, argv);
@@ -46,6 +48,12 @@ void SDLApplication::run(SDLAppDelegate *delegate) {
       auto r = (lms::Runnable *)event.user.data1;
       r->run();
       lms::release(r);
+    }
+    
+    if (event.type == SDL_WINDOWEVENT) {
+      if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
+        SDL_GL_GetDrawableSize(mainWindow, &mainWindowWidth, &mainWindowHeight);
+      }
     }
 
     lms::drainAutoReleasePool();
