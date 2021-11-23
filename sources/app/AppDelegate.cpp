@@ -185,8 +185,8 @@ protected:
     double videoRatio = st->codecpar->width * 1.0 / st->codecpar->height;
     double windowRatio = mainWindowWidth * 1.0 / mainWindowHeight;
     
-    int rectWidth;
-    int rectHeight;
+    int imgWidth;
+    int imgHeight;
     int rectX = 0;
     int rectY = 0;
     
@@ -194,21 +194,21 @@ protected:
     
     if ((videoRatio < windowRatio && aspectFit) || (videoRatio > windowRatio && !aspectFit)) {
       //based on height
-      rectHeight = mainWindowHeight;
-      rectWidth = videoRatio * rectHeight;
+      imgHeight = mainWindowHeight;
+      imgWidth = videoRatio * imgHeight;
       if (aspectFit){
-        rectX = (mainWindowWidth - rectWidth) / 2;
+        rectX = (mainWindowWidth - imgWidth) / 2;
       } else {
-        rectX = (rectWidth - mainWindowWidth) / 2;
+        rectX = (imgWidth - mainWindowWidth) / 2;
       }
     } else {
       //based on width
-      rectWidth = mainWindowWidth;
-      rectHeight = rectWidth / videoRatio;
+      imgWidth = mainWindowWidth;
+      imgHeight = imgWidth / videoRatio;
       if (aspectFit) {
-        rectY = (mainWindowHeight - rectHeight) / 2;
+        rectY = (mainWindowHeight - imgHeight) / 2;
       } else {
-        rectY = (rectHeight - mainWindowHeight) / 2;
+        rectY = (imgHeight - mainWindowHeight) / 2;
       }
     }
     
@@ -216,8 +216,8 @@ protected:
                                    st->codecpar->width,
                                    st->codecpar->height,
                              (AVPixelFormat)st->codecpar->format,
-                             rectWidth,
-                             rectHeight,
+                             imgWidth,
+                             imgHeight,
                              AV_PIX_FMT_YUV420P,
                              SWS_BILINEAR,
                              NULL,
@@ -225,39 +225,27 @@ protected:
                              NULL);
     
     int numBytes = av_image_get_buffer_size(AV_PIX_FMT_YUV420P,
-                                            rectWidth,
-                                            rectHeight,
+                                            imgWidth,
+                                            imgHeight,
                                             32);
     
     buffer = (uint8_t *)av_malloc(numBytes * sizeof(uint8_t));
     
     AVFrame *y = av_frame_alloc();
-    av_image_fill_arrays(y->data, y->linesize, buffer, AV_PIX_FMT_YUV420P, rectWidth, rectHeight, 32);
+    av_image_fill_arrays(y->data, y->linesize, buffer, AV_PIX_FMT_YUV420P, imgWidth, imgHeight, 32);
        
     LMSLogVerbose("Start rendering video frame | ts:%.2lf, pts:%lld", ts, frame->pts);
-    rect.x = rectX;
-    rect.y = rectY;
-    rect.w = rectWidth;
-    rect.h = rectHeight;
+    rect.x = 0;
+    rect.y = 0;
+    rect.w = imgWidth;
+    rect.h = imgHeight;
     
-    if (!aspectFit) {
-      rect.x = 0;
-      rect.y = 0;
-    }
-    
-    if (aspectFit) {
-      texture = SDL_CreateTexture(renderer,
-                                  SDL_PIXELFORMAT_YV12,
-                                  SDL_TEXTUREACCESS_STREAMING,
-                                  mainWindowWidth,
-                                  mainWindowHeight);
-    } else {
-      texture = SDL_CreateTexture(renderer,
-                                  SDL_PIXELFORMAT_YV12,
-                                  SDL_TEXTUREACCESS_STREAMING,
-                                  rectWidth,
-                                  rectHeight);
-    }
+   
+    texture = SDL_CreateTexture(renderer,
+                                SDL_PIXELFORMAT_YV12,
+                                SDL_TEXTUREACCESS_STREAMING,
+                                imgWidth,
+                                imgHeight);
     
 
     sws_scale(sws_ctx,
@@ -277,10 +265,9 @@ protected:
     av_frame_free(&y);
 
     SDL_RenderClear(renderer);
-    
-    
     if (aspectFit) {
-      SDL_RenderCopy(renderer, texture, NULL, NULL);
+      SDL_Rect dstRect = {rectX, rectY, imgWidth, imgHeight};
+      SDL_RenderCopy(renderer, texture, NULL, &dstRect);
     } else {
       SDL_Rect srcRect = {rectX, rectY, mainWindowWidth, mainWindowHeight};
       SDL_RenderCopy(renderer, texture, &srcRect, NULL);
