@@ -190,16 +190,26 @@ protected:
     int rectX = 0;
     int rectY = 0;
     
-    if (videoRatio < windowRatio) {
+    bool aspectFit = true;
+    
+    if ((videoRatio < windowRatio && aspectFit) || (videoRatio > windowRatio && !aspectFit)) {
       //based on height
       rectHeight = mainWindowHeight;
       rectWidth = videoRatio * rectHeight;
-      rectX = (mainWindowWidth - rectWidth) / 2;
+      if (aspectFit){
+        rectX = (mainWindowWidth - rectWidth) / 2;
+      } else {
+        rectX = (rectWidth - mainWindowWidth) / 2;
+      }
     } else {
       //based on width
       rectWidth = mainWindowWidth;
       rectHeight = rectWidth / videoRatio;
-      rectY = (mainWindowHeight - rectHeight) / 2;
+      if (aspectFit) {
+        rectY = (mainWindowHeight - rectHeight) / 2;
+      } else {
+        rectY = (rectHeight - mainWindowHeight) / 2;
+      }
     }
     
     sws_ctx = sws_getCachedContext(sws_ctx,
@@ -230,11 +240,25 @@ protected:
     rect.w = rectWidth;
     rect.h = rectHeight;
     
-    texture = SDL_CreateTexture(renderer,
-                                SDL_PIXELFORMAT_YV12,
-                                SDL_TEXTUREACCESS_STREAMING,
-                                mainWindowWidth,
-                                mainWindowHeight);
+    if (!aspectFit) {
+      rect.x = 0;
+      rect.y = 0;
+    }
+    
+    if (aspectFit) {
+      texture = SDL_CreateTexture(renderer,
+                                  SDL_PIXELFORMAT_YV12,
+                                  SDL_TEXTUREACCESS_STREAMING,
+                                  mainWindowWidth,
+                                  mainWindowHeight);
+    } else {
+      texture = SDL_CreateTexture(renderer,
+                                  SDL_PIXELFORMAT_YV12,
+                                  SDL_TEXTUREACCESS_STREAMING,
+                                  rectWidth,
+                                  rectHeight);
+    }
+    
 
     sws_scale(sws_ctx,
               (uint8_t const *const *)frame->data,
@@ -253,7 +277,14 @@ protected:
     av_frame_free(&y);
 
     SDL_RenderClear(renderer);
-    SDL_RenderCopy(renderer, texture, NULL, NULL);
+    
+    
+    if (aspectFit) {
+      SDL_RenderCopy(renderer, texture, NULL, NULL);
+    } else {
+      SDL_Rect srcRect = {rectX, rectY, mainWindowWidth, mainWindowHeight};
+      SDL_RenderCopy(renderer, texture, &srcRect, NULL);
+    }
     SDL_RenderPresent(renderer);
   }
   
