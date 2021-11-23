@@ -169,16 +169,13 @@ protected:
   
 protected:
   void didReceiveFrame(lms::Frame *frm) override {
-    if (sws_ctx == nullptr) {
-      LMSLogError("Render %p not started appropriately!", this);
-      return;
-    }
+    assert(sws_ctx);
       
     auto frame = (AVFrame *)frm;
     
     double ts = frame->best_effort_timestamp * av_q2d(st->time_base);
        
-    LMSLogVerbose("Start rendering video frame | ts:%.2lf, pts:%lld", ts, frame->pts);
+    LMSLogVerbose("Render video frame | ts:%.2lf, pts:%lld", ts, frame->pts);
     rect.x = 0;
     rect.y = 0;
     rect.w = st->codecpar->width;
@@ -238,7 +235,8 @@ static int fpsTimerFunc(FPSTimer *timer) {
   while(!timer->shouldQuit) {
     LMSLogVerbose("FPS timer callback on: %u", SDL_GetTicks());
 
-    timer->runnable->run();
+    lms::dispatchAsync(lms::mainQueue(), timer->runnable);
+//    timer->runnable->run();
     
     // 避免 runnable 执行过快（小于1ms)，导致下面的delay计算结果为0
     // 从而进入短暂的忙循环
@@ -281,18 +279,11 @@ public:
     auto src = lms::autoRelease(new VideoFile(argv[1]));
     player = new lms::Player(src, lms::autoRelease(new SDLView));
     player->play();
-    
-//    src = new VideoFile(argv[1]);
-//    src->open();
-//    src->loadPackets(10000);
   }
 
   void willTerminateApplication() override {
     player->stop();
     lms::release(player);
-    
-//    src->close();
-//    lms::release(src);
 
     lms::unInit();
   }

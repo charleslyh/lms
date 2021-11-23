@@ -23,7 +23,7 @@ public:
 public:
   Packet(void *internalPacket, ResourceHolder *holder);
   ~Packet();
-
+  
 private:
   ResourceHolder *holder;
   void *internalPacket;

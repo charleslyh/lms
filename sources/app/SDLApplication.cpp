@@ -30,7 +30,7 @@ void SDLApplication::run(SDLAppDelegate *delegate) {
                                 SDL_WINDOWPOS_CENTERED,
                                 1920 / 2,
                                 1080 / 2,
-                                SDL_WINDOW_METAL | SDL_WINDOW_ALLOW_HIGHDPI);
+                                SDL_WINDOW_METAL | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE);
   SDL_GL_SetSwapInterval(1);
 
   delegate->didFinishLaunchingApplication(argc, argv);
