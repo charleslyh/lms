@@ -18,50 +18,37 @@ extern "C" {
 #include <inttypes.h>
 
 
-typedef enum LMS_scale_mode_e {
-  aspectFit = 1,
-  aspectFill,
-  scaleFill
-} LMS_scale_mode;
+typedef enum {
+  ScaleModeAspectFit = 1,
+  ScaleModeAspectFill,
+  ScaleModeScaleToFill
+} ScaleMode;
 
-SDL_Rect calcDrawRect(LMS_scale_mode scaleMode, int srcWidth, int srcHeight, SDL_Rect bounds) {
-  SDL_Rect rect;
-  int rectWidth, rectHeight, rectX, rectY;
+SDL_Rect calcDrawRect(ScaleMode mode, int srcWidth, int srcHeight, SDL_Rect bounds) {
+  double srcRatio      = (double)srcWidth / (double)srcHeight;
+  double boundingRatio = (double)bounds.w / (double)bounds.h;
   
-  double videoRatio  = srcWidth * 1.0 / srcHeight;
-  double windowRatio = bounds.w * 1.0 / bounds.h;
-  
-  switch (scaleMode) {
-    case aspectFit:
-    case aspectFill: {
-      if ((videoRatio < windowRatio && scaleMode == aspectFit) || (videoRatio > windowRatio && scaleMode == aspectFill)) {
-        rectHeight = bounds.h;
-        rectWidth  = videoRatio * rectHeight;
-        rectX = (bounds.w - rectWidth) / 2;
-        rectY = bounds.y;
-      } else {
-        rectWidth = bounds.w;
-        rectHeight = rectWidth / videoRatio;
-        rectY = (bounds.h - rectHeight) / 2;
-        rectX = bounds.x;
-      }
-      break;
-    }
-      
-    case scaleFill: {
-      return bounds;
-    }
-      
-    default:
-      break;
+  if (mode == ScaleModeScaleToFill) {
+    return bounds;
   }
   
-  rect.x = rectX;
-  rect.y = rectY;
-  rect.w = rectWidth;
-  rect.h = rectHeight;
+  bool isAspectFit  = (mode == ScaleModeAspectFit);
+  bool isAspectFill = (mode == ScaleModeAspectFill);
+  SDL_Rect drawRect;
   
-  return rect;
+  if ((srcRatio < boundingRatio && isAspectFit) || (srcRatio > boundingRatio && isAspectFill)) {
+    drawRect.h = bounds.h;
+    drawRect.w = srcRatio * drawRect.h;
+    drawRect.x = (bounds.w - drawRect.w) / 2;
+    drawRect.y = bounds.y;
+  } else {
+    drawRect.w = bounds.w;
+    drawRect.h = drawRect.w / srcRatio;
+    drawRect.y = (bounds.h - drawRect.h) / 2;
+    drawRect.x = bounds.x;
+  }
+  
+  return drawRect;
 }
 
 class VideoFile : public lms::PassiveMediaSource {
@@ -263,7 +250,7 @@ private:
   SDL_Texture       *texture   = nullptr;
   SDL_Rect           rect;
   SDL_Rect           drawRect;
-  LMS_scale_mode   scaleMode   = aspectFill;
+  ScaleMode   scaleMode   =   ScaleModeAspectFill;
 };
 
 struct FPSTimer {
