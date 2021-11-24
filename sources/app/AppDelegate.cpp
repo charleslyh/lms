@@ -39,12 +39,12 @@ SDL_Rect calcDrawRect(ScaleMode mode, int srcWidth, int srcHeight, SDL_Rect boun
   if ((srcRatio < boundingRatio && isAspectFit) || (srcRatio > boundingRatio && isAspectFill)) {
     drawRect.h = bounds.h;
     drawRect.w = srcRatio * drawRect.h;
-    drawRect.x = (bounds.w - drawRect.w) / 2;
+    drawRect.x = (bounds.w - drawRect.w) / 2 + bounds.x;
     drawRect.y = bounds.y;
   } else {
     drawRect.w = bounds.w;
     drawRect.h = drawRect.w / srcRatio;
-    drawRect.y = (bounds.h - drawRect.h) / 2;
+    drawRect.y = (bounds.h - drawRect.h) / 2 + bounds.y;
     drawRect.x = bounds.x;
   }
   
