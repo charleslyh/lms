@@ -32,23 +32,9 @@ SDL_Rect calcDrawRect(LMS_scale_mode scaleMode, int srcWidth, int srcHeight, SDL
   double windowRatio = bounds.w * 1.0 / bounds.h;
   
   switch (scaleMode) {
-    case aspectFit: {
-      if (videoRatio < windowRatio) {
-        rectHeight = bounds.h;
-        rectWidth  = videoRatio * rectHeight;
-        rectX = (bounds.w - rectWidth) / 2;
-        rectY = bounds.y;
-      } else {
-        rectWidth = bounds.w;
-        rectHeight = rectWidth / videoRatio;
-        rectY = (bounds.h - rectHeight) / 2;
-        rectX = bounds.x;
-      }
-      break;
-    }
-      
+    case aspectFit:
     case aspectFill: {
-      if (videoRatio > windowRatio) {
+      if ((videoRatio < windowRatio && scaleMode == aspectFit) || (videoRatio > windowRatio && scaleMode == aspectFill)) {
         rectHeight = bounds.h;
         rectWidth  = videoRatio * rectHeight;
         rectX = (bounds.w - rectWidth) / 2;
@@ -277,7 +263,7 @@ private:
   SDL_Texture       *texture   = nullptr;
   SDL_Rect           rect;
   SDL_Rect           drawRect;
-  LMS_scale_mode   scaleMode   = scaleFill;
+  LMS_scale_mode   scaleMode   = aspectFill;
 };
 
 struct FPSTimer {
