@@ -18,6 +18,11 @@ extern "C" {
 #include <inttypes.h>
 
 
+typedef enum LMS_filling_mode_e {
+  aspectFit = 1,
+  aspectFill,
+} LMS_filling_mode;
+
 class VideoFile : public lms::PassiveMediaSource {
 public:
   VideoFile(const char *path) {
@@ -135,124 +140,133 @@ protected:
     
     Uint32 renderFlags = SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE;
     renderer = SDL_CreateRenderer(mainWindow, -1, renderFlags);
+    
+    texture = SDL_CreateTexture(renderer,
+                                SDL_PIXELFORMAT_YV12,
+                                SDL_TEXTUREACCESS_STREAMING,
+                                par->width,
+                                par->height);
+    
+    sws_ctx = sws_getContext(par->width,
+                             par->height,
+                             (AVPixelFormat)par->format,
+                             par->width,
+                             par->height,
+                             AV_PIX_FMT_YUV420P,
+                             SWS_BILINEAR,
+                             NULL,
+                             NULL,
+                             NULL);
+    
+    int numBytes = av_image_get_buffer_size(AV_PIX_FMT_YUV420P,
+                                            par->width,
+                                            par->height,
+                                            32);
+    
+    buffer = (uint8_t *)av_malloc(numBytes * sizeof(uint8_t));
+    
+    yuv = av_frame_alloc();
+    av_image_fill_arrays(yuv->data, yuv->linesize, buffer, AV_PIX_FMT_YUV420P, par->width, par->height, 32);
   }
   
   void stop() override {
   }
   
 protected:
-  void calcImgSize(int &imgHeight, int &imgWidth, int &rectX, int &rectY) {
-    double videoRatio  = st->codecpar->width * 1.0 / st->codecpar->height;
-    double windowRatio = mainWindowWidth * 1.0 / mainWindowHeight;
+  void calcRenderRect() {
+    int rectWidth, rectHeight;
+    int rectX = 0;
+    int rectY = 0;
     
-    if ((videoRatio < windowRatio && aspectFit) || (videoRatio > windowRatio && !aspectFit)) {
-      imgHeight = mainWindowHeight;
-      imgWidth = videoRatio * imgHeight;
-      if (aspectFit){
-        rectX = (mainWindowWidth - imgWidth) / 2;
-      } else {
-        rectX = (imgWidth - mainWindowWidth) / 2;
+    switch (fillingMode) {
+      case aspectFit: {
+        double videoRatio  = st->codecpar->width * 1.0 / st->codecpar->height;
+        double windowRatio = mainWindowWidth * 1.0 / mainWindowHeight;
+        if (videoRatio < windowRatio) {
+          rectHeight = mainWindowHeight;
+          rectWidth  = videoRatio * rectHeight;
+          rectX = (mainWindowWidth - rectWidth) / 2;
+        } else {
+          rectWidth = mainWindowWidth;
+          rectHeight = rectWidth / videoRatio;
+          rectY = (mainWindowHeight - rectHeight) / 2;
+        }
+        renderRect.x = rectX;
+        renderRect.y = rectY;
+        renderRect.w = rectWidth;
+        renderRect.h = rectHeight;
+        break;
       }
-    } else {
-      imgWidth = mainWindowWidth;
-      imgHeight = imgWidth / videoRatio;
-      if (aspectFit) {
-        rectY = (mainWindowHeight - imgHeight) / 2;
-      } else {
-        rectY = (imgHeight - mainWindowHeight) / 2;
+        
+      case aspectFill: {
+        renderRect.x = (st->codecpar->width - mainWindowWidth)/2;
+        renderRect.y = (st->codecpar->height - mainWindowHeight)/2;
+        renderRect.w = mainWindowWidth;
+        renderRect.h = mainWindowHeight;
+        break;
       }
+        
+      default:
+        break;
     }
   }
   
-  void scaleImg(AVFrame *srcFrame, int srcWidth, int srcHeight, AVPixelFormat srcFormat,
-                AVFrame *dstFrame, int dstWidth, int dstHeight, AVPixelFormat dstFormat) {
-    sws_ctx = sws_getCachedContext(sws_ctx,
-                                   srcWidth,
-                                   srcHeight,
-                                   srcFormat,
-                                   dstWidth,
-                                   dstHeight,
-                                   dstFormat,
-                                   SWS_BILINEAR,
-                                   NULL,
-                                   NULL,
-                                   NULL);
-    
-    int numBytes = av_image_get_buffer_size(dstFormat,
-                                            dstWidth,
-                                            dstHeight,
-                                            32);
-    
-    buffer = (uint8_t *)av_malloc(numBytes * sizeof(uint8_t));
-    
-    av_image_fill_arrays(dstFrame->data, dstFrame->linesize, buffer, dstFormat, dstWidth, dstHeight, 32);
-    
-    sws_scale(sws_ctx,
-              (uint8_t const *const *)srcFrame->data,
-              srcFrame->linesize,
-              0,
-              srcHeight,
-              dstFrame->data,
-              dstFrame->linesize);
-  }
-  
   void didReceiveFrame(lms::Frame *frm) override {
+    assert(sws_ctx);
     
     auto frame = (AVFrame *)frm;
     
     double ts = frame->best_effort_timestamp * av_q2d(st->time_base);
     LMSLogVerbose("Render video frame | ts:%.2lf, pts:%lld", ts, frame->pts);
-    
-    SDL_DestroyTexture(texture);
-    
-    int imgWidth, imgHeight;
-    int rectX = 0;
-    int rectY = 0;
-        
-    calcImgSize(imgHeight, imgWidth, rectX, rectY);
-    
-    AVFrame *yuv = av_frame_alloc();
-    scaleImg(frame, st->codecpar->width, st->codecpar->height, (AVPixelFormat)st->codecpar->format,
-             yuv, imgWidth, imgHeight, AV_PIX_FMT_YUV420P);
        
     rect.x = 0;
     rect.y = 0;
-    rect.w = imgWidth;
-    rect.h = imgHeight;
+    rect.w = st->codecpar->width;
+    rect.h = st->codecpar->height;
     
-    texture = SDL_CreateTexture(renderer,
-                                SDL_PIXELFORMAT_YV12,
-                                SDL_TEXTUREACCESS_STREAMING,
-                                imgWidth,
-                                imgHeight);
-
+    sws_scale(sws_ctx,
+              (uint8_t const *const *)frame->data,
+              frame->linesize,
+              0,
+              st->codecpar->height,
+              yuv->data,
+              yuv->linesize);
+    
     SDL_UpdateYUVTexture(texture,
                          &rect,
                          yuv->data[0], yuv->linesize[0],
                          yuv->data[1], yuv->linesize[1],
                          yuv->data[2], yuv->linesize[2]);
     
-    av_frame_free(&yuv);
-
+    calcRenderRect();
+    
     SDL_RenderClear(renderer);
-    if (aspectFit) {
-      SDL_Rect dstRect = {rectX, rectY, imgWidth, imgHeight};
-      SDL_RenderCopy(renderer, texture, NULL, &dstRect);
-    } else {
-      SDL_Rect srcRect = {rectX, rectY, mainWindowWidth, mainWindowHeight};
-      SDL_RenderCopy(renderer, texture, &srcRect, NULL);
+    switch (fillingMode) {
+      case aspectFit:
+        SDL_RenderCopy(renderer, texture, NULL, &renderRect);
+        break;
+       
+      case aspectFill:
+        SDL_RenderCopy(renderer, texture, &renderRect, NULL);
+        break;
+        
+      default:
+        SDL_RenderCopy(renderer, texture, NULL, NULL);
+        break;
     }
     SDL_RenderPresent(renderer);
   }
   
 private:
   AVStream *st;
-  struct SwsContext *sws_ctx  = nullptr;
-  uint8_t           *buffer   = nullptr;
-  SDL_Renderer      *renderer = nullptr;
-  SDL_Texture       *texture  = nullptr;
+  struct SwsContext *sws_ctx     = nullptr;
+  uint8_t           *buffer      = nullptr;
+  AVFrame           *yuv         = nullptr;
+  SDL_Renderer      *renderer    = nullptr;
+  SDL_Texture       *texture     = nullptr;
   SDL_Rect           rect;
-  bool              aspectFit = true;
+  SDL_Rect           renderRect;
+  LMS_filling_mode   fillingMode = aspectFit;
 };
 
 struct FPSTimer {
