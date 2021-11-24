@@ -24,7 +24,7 @@ typedef enum LMS_scale_mode_e {
   scaleFill
 } LMS_scale_mode;
 
-SDL_Rect calcRenderRect(LMS_scale_mode scaleMode, int srcWidth, int srcHeight, SDL_Rect bounds) {
+SDL_Rect calcDrawRect(LMS_scale_mode scaleMode, int srcWidth, int srcHeight, SDL_Rect bounds) {
   int rectWidth, rectHeight, rectX, rectY;
   
   SDL_Rect rect;
@@ -38,12 +38,12 @@ SDL_Rect calcRenderRect(LMS_scale_mode scaleMode, int srcWidth, int srcHeight, S
         rectHeight = bounds.h;
         rectWidth  = videoRatio * rectHeight;
         rectX = (bounds.w - rectWidth) / 2;
-        rectY = 0;
+        rectY = bounds.y;
       } else {
         rectWidth = bounds.w;
         rectHeight = rectWidth / videoRatio;
         rectY = (bounds.h - rectHeight) / 2;
-        rectX = 0;
+        rectX = bounds.x;
       }
       break;
     }
@@ -53,12 +53,12 @@ SDL_Rect calcRenderRect(LMS_scale_mode scaleMode, int srcWidth, int srcHeight, S
         rectHeight = bounds.h;
         rectWidth  = videoRatio * rectHeight;
         rectX = (bounds.w - rectWidth) / 2;
-        rectY = 0;
+        rectY = bounds.y;
       } else {
         rectWidth = bounds.w;
         rectHeight = rectWidth / videoRatio;
         rectY = (bounds.h - rectHeight) / 2;
-        rectX = 0;
+        rectX = bounds.x;
       }
       break;
     }
@@ -262,23 +262,23 @@ protected:
     SDL_GL_GetDrawableSize(mainWindow, &mainWindowWidth, &mainWindowHeight);
     SDL_Rect bounds = {0, 0, mainWindowWidth, mainWindowHeight};
     
-    renderRect = calcRenderRect(scaleMode, st->codecpar->width, st->codecpar->height, bounds);
+    drawRect = calcDrawRect(scaleMode, st->codecpar->width, st->codecpar->height, bounds);
     
     SDL_RenderClear(renderer);
-    SDL_RenderCopy(renderer, texture, NULL, &renderRect);
+    SDL_RenderCopy(renderer, texture, NULL, &drawRect);
     SDL_RenderPresent(renderer);
   }
   
 private:
   AVStream *st;
-  struct SwsContext *sws_ctx     = nullptr;
-  uint8_t           *buffer      = nullptr;
-  AVFrame           *yuv         = nullptr;
-  SDL_Renderer      *renderer    = nullptr;
-  SDL_Texture       *texture     = nullptr;
+  struct SwsContext *sws_ctx   = nullptr;
+  uint8_t           *buffer    = nullptr;
+  AVFrame           *yuv       = nullptr;
+  SDL_Renderer      *renderer  = nullptr;
+  SDL_Texture       *texture   = nullptr;
   SDL_Rect           rect;
-  SDL_Rect           renderRect;
-  LMS_scale_mode   scaleMode     = aspectFit;
+  SDL_Rect           drawRect;
+  LMS_scale_mode   scaleMode   = scaleFill;
 };
 
 struct FPSTimer {
