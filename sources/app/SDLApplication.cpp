@@ -10,8 +10,6 @@ extern "C" {
 static Uint32 RunnableEvent;
 
 SDL_Window *mainWindow;
-int mainWindowWidth  = 1920;
-int mainWindowHeight = 1080;
 
 SDLApplication::SDLApplication(int argc, char **argv) {
   if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER)) {
@@ -48,12 +46,6 @@ void SDLApplication::run(SDLAppDelegate *delegate) {
       auto r = (lms::Runnable *)event.user.data1;
       r->run();
       lms::release(r);
-    }
-    
-    if (event.type == SDL_WINDOWEVENT) {
-      if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
-        SDL_GL_GetDrawableSize(mainWindow, &mainWindowWidth, &mainWindowHeight);
-      }
     }
 
     lms::drainAutoReleasePool();

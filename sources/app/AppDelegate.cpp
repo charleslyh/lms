@@ -18,10 +18,66 @@ extern "C" {
 #include <inttypes.h>
 
 
-typedef enum LMS_filling_mode_e {
+typedef enum LMS_scale_mode_e {
   aspectFit = 1,
   aspectFill,
-} LMS_filling_mode;
+  scaleFill
+} LMS_scale_mode;
+
+SDL_Rect calcRenderRect(LMS_scale_mode scaleMode, int srcWidth, int srcHeight, SDL_Rect bounds) {
+  int rectWidth, rectHeight, rectX, rectY;
+  
+  SDL_Rect rect;
+  
+  double videoRatio  = srcWidth * 1.0 / srcHeight;
+  double windowRatio = bounds.w * 1.0 / bounds.h;
+  
+  switch (scaleMode) {
+    case aspectFit: {
+      if (videoRatio < windowRatio) {
+        rectHeight = bounds.h;
+        rectWidth  = videoRatio * rectHeight;
+        rectX = (bounds.w - rectWidth) / 2;
+        rectY = 0;
+      } else {
+        rectWidth = bounds.w;
+        rectHeight = rectWidth / videoRatio;
+        rectY = (bounds.h - rectHeight) / 2;
+        rectX = 0;
+      }
+      break;
+    }
+      
+    case aspectFill: {
+      if (videoRatio > windowRatio) {
+        rectHeight = bounds.h;
+        rectWidth  = videoRatio * rectHeight;
+        rectX = (bounds.w - rectWidth) / 2;
+        rectY = 0;
+      } else {
+        rectWidth = bounds.w;
+        rectHeight = rectWidth / videoRatio;
+        rectY = (bounds.h - rectHeight) / 2;
+        rectX = 0;
+      }
+      break;
+    }
+      
+    case scaleFill: {
+      return bounds;
+    }
+      
+    default:
+      break;
+  }
+  
+  rect.x = rectX;
+  rect.y = rectY;
+  rect.w = rectWidth;
+  rect.h = rectHeight;
+  
+  return rect;
+}
 
 class VideoFile : public lms::PassiveMediaSource {
 public:
@@ -173,43 +229,6 @@ protected:
   }
   
 protected:
-  void calcRenderRect() {
-    int rectWidth, rectHeight;
-    int rectX = 0;
-    int rectY = 0;
-    
-    switch (fillingMode) {
-      case aspectFit: {
-        double videoRatio  = st->codecpar->width * 1.0 / st->codecpar->height;
-        double windowRatio = mainWindowWidth * 1.0 / mainWindowHeight;
-        if (videoRatio < windowRatio) {
-          rectHeight = mainWindowHeight;
-          rectWidth  = videoRatio * rectHeight;
-          rectX = (mainWindowWidth - rectWidth) / 2;
-        } else {
-          rectWidth = mainWindowWidth;
-          rectHeight = rectWidth / videoRatio;
-          rectY = (mainWindowHeight - rectHeight) / 2;
-        }
-        renderRect.x = rectX;
-        renderRect.y = rectY;
-        renderRect.w = rectWidth;
-        renderRect.h = rectHeight;
-        break;
-      }
-        
-      case aspectFill: {
-        renderRect.x = (st->codecpar->width - mainWindowWidth)/2;
-        renderRect.y = (st->codecpar->height - mainWindowHeight)/2;
-        renderRect.w = mainWindowWidth;
-        renderRect.h = mainWindowHeight;
-        break;
-      }
-        
-      default:
-        break;
-    }
-  }
   
   void didReceiveFrame(lms::Frame *frm) override {
     assert(sws_ctx);
@@ -238,22 +257,15 @@ protected:
                          yuv->data[1], yuv->linesize[1],
                          yuv->data[2], yuv->linesize[2]);
     
-    calcRenderRect();
+    
+    int mainWindowWidth, mainWindowHeight;
+    SDL_GL_GetDrawableSize(mainWindow, &mainWindowWidth, &mainWindowHeight);
+    SDL_Rect bounds = {0, 0, mainWindowWidth, mainWindowHeight};
+    
+    renderRect = calcRenderRect(scaleMode, st->codecpar->width, st->codecpar->height, bounds);
     
     SDL_RenderClear(renderer);
-    switch (fillingMode) {
-      case aspectFit:
-        SDL_RenderCopy(renderer, texture, NULL, &renderRect);
-        break;
-       
-      case aspectFill:
-        SDL_RenderCopy(renderer, texture, &renderRect, NULL);
-        break;
-        
-      default:
-        SDL_RenderCopy(renderer, texture, NULL, NULL);
-        break;
-    }
+    SDL_RenderCopy(renderer, texture, NULL, &renderRect);
     SDL_RenderPresent(renderer);
   }
   
@@ -266,7 +278,7 @@ private:
   SDL_Texture       *texture     = nullptr;
   SDL_Rect           rect;
   SDL_Rect           renderRect;
-  LMS_filling_mode   fillingMode = aspectFit;
+  LMS_scale_mode   scaleMode     = aspectFit;
 };
 
 struct FPSTimer {
