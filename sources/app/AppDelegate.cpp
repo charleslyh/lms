@@ -25,9 +25,8 @@ typedef enum LMS_scale_mode_e {
 } LMS_scale_mode;
 
 SDL_Rect calcDrawRect(LMS_scale_mode scaleMode, int srcWidth, int srcHeight, SDL_Rect bounds) {
-  int rectWidth, rectHeight, rectX, rectY;
-  
   SDL_Rect rect;
+  int rectWidth, rectHeight, rectX, rectY;
   
   double videoRatio  = srcWidth * 1.0 / srcHeight;
   double windowRatio = bounds.w * 1.0 / bounds.h;
