@@ -236,8 +236,16 @@ protected:
     this->st = (AVStream *)meta.data;
     auto par = st->codecpar;
     
+    // 创建一个SDL窗口用于在其中进行视频渲染
+    win = SDL_CreateWindow("LMS Window",
+                           SDL_WINDOWPOS_CENTERED,
+                           SDL_WINDOWPOS_CENTERED,
+                           par->width,
+                           par->height,
+                           SDL_WINDOW_METAL | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE);
+    
     Uint32 renderFlags = SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE;
-    renderer = SDL_CreateRenderer(mainWindow, -1, renderFlags);
+    renderer = SDL_CreateRenderer(win, -1, renderFlags);
     
     texture = SDL_CreateTexture(renderer,
                                 SDL_PIXELFORMAT_YV12,
@@ -259,6 +267,9 @@ protected:
     
     SDL_DestroyRenderer(renderer);
     renderer = nullptr;
+    
+    SDL_DestroyWindow(win);
+    win = nullptr;
   }
   
   ScaleMode getContentScaleMode() const {
@@ -285,23 +296,24 @@ protected:
                            yuv->data[0], yuv->linesize[0],
                            yuv->data[1], yuv->linesize[1],
                            yuv->data[2], yuv->linesize[2]);
-      
-      av_frame_unref(frame);
-      
-      int mainWindowWidth, mainWindowHeight;
-      SDL_GL_GetDrawableSize(mainWindow, &mainWindowWidth, &mainWindowHeight);
-      SDL_Rect bounds = {0, 0, mainWindowWidth, mainWindowHeight};
+            
+      int winWidth, winHeight;
+      SDL_GL_GetDrawableSize(win, &winWidth, &winHeight);
+      SDL_Rect bounds = {0, 0, winWidth, winHeight};
 
-      SDL_Rect drawRect = calcDrawRect(scaleMode, st->codecpar->width, st->codecpar->height, bounds);
+      SDL_Rect drawRect = calcDrawRect(scaleMode, frame->width, frame->height, bounds);
 
       SDL_RenderClear(renderer);
       SDL_RenderCopy(renderer, texture, NULL, &drawRect);
       SDL_RenderPresent(renderer);
+      
+      av_frame_unref(frame);
     });
   }
   
 private:
   AVStream       *st;
+  SDL_Window     *win;
   SDL_Renderer   *renderer  = nullptr;
   SDL_Texture    *texture   = nullptr;
   SDLFrameScaler *scaler    = nullptr;

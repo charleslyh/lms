@@ -9,8 +9,6 @@ extern "C" {
 
 static Uint32 RunnableEvent;
 
-SDL_Window *mainWindow;
-
 SDLApplication::SDLApplication(int argc, char **argv) {
   if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER)) {
     LMSLogError("Can't initialize SDL: %s", SDL_GetError());
@@ -23,15 +21,6 @@ SDLApplication::SDLApplication(int argc, char **argv) {
 
 void SDLApplication::run(SDLAppDelegate *delegate) {
   RunnableEvent = SDL_RegisterEvents(1);
-
-  // 创建一个SDL窗口用于在其中进行视频渲染
-  mainWindow = SDL_CreateWindow("LMS Window",
-                                SDL_WINDOWPOS_CENTERED,
-                                SDL_WINDOWPOS_CENTERED,
-                                1920 / 2,
-                                1080 / 2,
-                                SDL_WINDOW_METAL | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE);
-  SDL_GL_SetSwapInterval(1);
 
   delegate->didFinishLaunchingApplication(argc, argv);
 
@@ -59,8 +48,6 @@ void SDLApplication::run(SDLAppDelegate *delegate) {
   }
 
   delegate->willTerminateApplication();
-  
-  SDL_DestroyWindow(mainWindow);
 }
 
 static
