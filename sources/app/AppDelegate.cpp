@@ -18,6 +18,39 @@ extern "C" {
 #include <inttypes.h>
 
 
+typedef enum {
+  ScaleModeAspectFit = 1,
+  ScaleModeAspectFill,
+  ScaleModeScaleToFill
+} ScaleMode;
+
+SDL_Rect calcDrawRect(ScaleMode mode, int srcWidth, int srcHeight, SDL_Rect bounds) {
+  double srcRatio      = (double)srcWidth / (double)srcHeight;
+  double boundingRatio = (double)bounds.w / (double)bounds.h;
+  
+  if (mode == ScaleModeScaleToFill) {
+    return bounds;
+  }
+  
+  bool isAspectFit  = (mode == ScaleModeAspectFit);
+  bool isAspectFill = (mode == ScaleModeAspectFill);
+  SDL_Rect drawRect;
+  
+  if ((srcRatio < boundingRatio && isAspectFit) || (srcRatio > boundingRatio && isAspectFill)) {
+    drawRect.h = bounds.h;
+    drawRect.w = srcRatio * drawRect.h;
+    drawRect.x = (bounds.w - drawRect.w) / 2 + bounds.x;
+    drawRect.y = bounds.y;
+  } else {
+    drawRect.w = bounds.w;
+    drawRect.h = drawRect.w / srcRatio;
+    drawRect.y = (bounds.h - drawRect.h) / 2 + bounds.y;
+    drawRect.x = bounds.x;
+  }
+  
+  return drawRect;
+}
+
 class VideoFile : public lms::PassiveMediaSource {
 public:
   VideoFile(const char *path) {
@@ -228,7 +261,16 @@ protected:
     renderer = nullptr;
   }
   
+  ScaleMode getContentScaleMode() const {
+    return this->scaleMode;
+  }
+  
+  void setContentScaleMode(ScaleMode scaleMode) {
+    this->scaleMode = scaleMode;
+  }
+  
 protected:
+  
   void didReceiveFrame(lms::Frame *frm) override {
     auto frame = av_frame_clone((AVFrame *)frm);
     
@@ -245,18 +287,25 @@ protected:
                            yuv->data[2], yuv->linesize[2]);
       
       av_frame_unref(frame);
+      
+      int mainWindowWidth, mainWindowHeight;
+      SDL_GL_GetDrawableSize(mainWindow, &mainWindowWidth, &mainWindowHeight);
+      SDL_Rect bounds = {0, 0, mainWindowWidth, mainWindowHeight};
+
+      SDL_Rect drawRect = calcDrawRect(scaleMode, st->codecpar->width, st->codecpar->height, bounds);
 
       SDL_RenderClear(renderer);
-      SDL_RenderCopy(renderer, texture, NULL, NULL);
+      SDL_RenderCopy(renderer, texture, NULL, &drawRect);
       SDL_RenderPresent(renderer);
     });
   }
   
 private:
   AVStream       *st;
-  SDL_Renderer   *renderer = nullptr;
-  SDL_Texture    *texture = nullptr;
-  SDLFrameScaler *scaler = nullptr;
+  SDL_Renderer   *renderer  = nullptr;
+  SDL_Texture    *texture   = nullptr;
+  SDLFrameScaler *scaler    = nullptr;
+  ScaleMode       scaleMode = ScaleModeAspectFit;
 };
 
 struct FPSTimer {
