@@ -18,6 +18,39 @@ extern "C" {
 #include <inttypes.h>
 
 
+typedef enum {
+  ScaleModeAspectFit = 1,
+  ScaleModeAspectFill,
+  ScaleModeScaleToFill
+} ScaleMode;
+
+SDL_Rect calcDrawRect(ScaleMode mode, int srcWidth, int srcHeight, SDL_Rect bounds) {
+  double srcRatio      = (double)srcWidth / (double)srcHeight;
+  double boundingRatio = (double)bounds.w / (double)bounds.h;
+  
+  if (mode == ScaleModeScaleToFill) {
+    return bounds;
+  }
+  
+  bool isAspectFit  = (mode == ScaleModeAspectFit);
+  bool isAspectFill = (mode == ScaleModeAspectFill);
+  SDL_Rect drawRect;
+  
+  if ((srcRatio < boundingRatio && isAspectFit) || (srcRatio > boundingRatio && isAspectFill)) {
+    drawRect.h = bounds.h;
+    drawRect.w = srcRatio * drawRect.h;
+    drawRect.x = (bounds.w - drawRect.w) / 2 + bounds.x;
+    drawRect.y = bounds.y;
+  } else {
+    drawRect.w = bounds.w;
+    drawRect.h = drawRect.w / srcRatio;
+    drawRect.y = (bounds.h - drawRect.h) / 2 + bounds.y;
+    drawRect.x = bounds.x;
+  }
+  
+  return drawRect;
+}
+
 class VideoFile : public lms::PassiveMediaSource {
 public:
   VideoFile(const char *path) {
@@ -168,19 +201,20 @@ protected:
   }
   
 protected:
+  
   void didReceiveFrame(lms::Frame *frm) override {
     assert(sws_ctx);
-      
+    
     auto frame = (AVFrame *)frm;
     
     double ts = frame->best_effort_timestamp * av_q2d(st->time_base);
-       
     LMSLogVerbose("Render video frame | ts:%.2lf, pts:%lld", ts, frame->pts);
+       
     rect.x = 0;
     rect.y = 0;
     rect.w = st->codecpar->width;
     rect.h = st->codecpar->height;
-
+    
     sws_scale(sws_ctx,
               (uint8_t const *const *)frame->data,
               frame->linesize,
@@ -188,26 +222,35 @@ protected:
               st->codecpar->height,
               yuv->data,
               yuv->linesize);
-
+    
     SDL_UpdateYUVTexture(texture,
                          &rect,
                          yuv->data[0], yuv->linesize[0],
                          yuv->data[1], yuv->linesize[1],
                          yuv->data[2], yuv->linesize[2]);
-
+    
+    
+    int mainWindowWidth, mainWindowHeight;
+    SDL_GL_GetDrawableSize(mainWindow, &mainWindowWidth, &mainWindowHeight);
+    SDL_Rect bounds = {0, 0, mainWindowWidth, mainWindowHeight};
+    
+    drawRect = calcDrawRect(scaleMode, st->codecpar->width, st->codecpar->height, bounds);
+    
     SDL_RenderClear(renderer);
-    SDL_RenderCopy(renderer, texture, NULL, NULL);
+    SDL_RenderCopy(renderer, texture, NULL, &drawRect);
     SDL_RenderPresent(renderer);
   }
   
 private:
   AVStream *st;
-  struct SwsContext *sws_ctx  = nullptr;
-  uint8_t           *buffer   = nullptr;
-  AVFrame           *yuv      = nullptr;
-  SDL_Renderer      *renderer = nullptr;
-  SDL_Texture       *texture  = nullptr;
+  struct SwsContext *sws_ctx   = nullptr;
+  uint8_t           *buffer    = nullptr;
+  AVFrame           *yuv       = nullptr;
+  SDL_Renderer      *renderer  = nullptr;
+  SDL_Texture       *texture   = nullptr;
   SDL_Rect           rect;
+  SDL_Rect           drawRect;
+  ScaleMode   scaleMode   =   ScaleModeAspectFill;
 };
 
 struct FPSTimer {
