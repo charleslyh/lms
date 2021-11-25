@@ -322,6 +322,7 @@ public:
       // 从buffer中循环取出匹配当前播放时间的图像帧，或者buffer为空，则终止
       while(true) {
         frame = (AVFrame *)buffer->popFront();
+
         if (frame == nullptr) {
           LMSLogWarning("No video frame!");
           return;
@@ -341,6 +342,7 @@ public:
         if (deviation < -tollerance) {
           // 丢弃过期帧，继续下一帧（如果有）的处理
           LMSLogWarning("Video frame dropped");
+          av_frame_unref(frame);
           continue;
         } else if (deviation > tollerance) {
           // 该帧尚未到播放时间，将其重入等待队列
@@ -364,6 +366,7 @@ public:
 
       if (render) {
         render->didReceiveFrame(frame);
+        av_frame_unref(frame);
       }
 
       if (delegate) {
@@ -383,9 +386,7 @@ public:
   }
   
   void didReceiveFrame(Frame *frame) override {
-    AVFrame *avfrm = (AVFrame *)frame;
-    
-    buffer->pushBack(av_frame_clone(avfrm));
+    buffer->pushBack(av_frame_clone((AVFrame *)frame));
   }
  
 private:
@@ -525,7 +526,7 @@ void Player::play() {
       speaker->setDelegate(coordinator);
 
       Decoder *decoder = autoRelease(createDecoder(meta));
-      
+
       SDLAudioResampler *resampler = autoRelease(new SDLAudioResampler(stream));
       astream = new Stream(meta, source, decoder, resampler, speaker);
     }
@@ -536,8 +537,8 @@ void Player::play() {
     return;
   }
   
-  vstream->start();
-  astream->start();
+  if (vstream) vstream->start();
+  if (astream) astream->start();
 
   coordinator->preload();
 }
@@ -545,13 +546,9 @@ void Player::play() {
 void Player::stop() {
   LMSLogInfo(nullptr);
   
-  if (astream != nullptr) {
-    astream->stop();
-  }
-  
-  if (vstream != nullptr) {
-    vstream->stop();
-  }
+  if (astream) astream->stop();
+  if (vstream) vstream->stop();
+
   source->close();
 
   lms::release(vstream);

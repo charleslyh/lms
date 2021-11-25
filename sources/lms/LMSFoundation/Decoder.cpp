@@ -4,6 +4,7 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 }
+#include <inttypes.h>
 
 namespace lms {
 
@@ -71,22 +72,21 @@ DecoderMeta FFMDecoder::meta() {
 void FFMDecoder::didReceivePacket(Packet *pkt) {
   assert(pkt != nullptr);
 
+  // 由于下面的解码过程可能会被异步调度（延迟）处理，为了避免在函数‘立即’返回后，pkt资源被释放
+  // 这里对pkt进行了一次人为引用（或者需要clone？）
   lms::retain(pkt);
   
   dispatchAsync(mainQueue(), [this, pkt]() {
     notifyDecoderEvent(pkt, 0);
        
-    AVPacket sharedPacket;
-    memset(&sharedPacket, 0, sizeof(sharedPacket));
-   
-    AVPacket *avpkt = &sharedPacket;
-    sharedPacket.data = pkt->data;
-    sharedPacket.size = pkt->size;
-    sharedPacket.pts  = pkt->pts;
+    AVPacket avpkt = {0};
+    avpkt.data = pkt->data;
+    avpkt.size = pkt->size;
+    avpkt.pts  = pkt->pts;
     
-    LMSLogVerbose("Begin decoding frame: %p", avpkt);
+    LMSLogVerbose("Begin decoding frame: pts=%" PRIi64, avpkt.pts);
 
-    int rt = avcodec_send_packet(codecContext, avpkt);
+    int rt = avcodec_send_packet(codecContext, &avpkt);
     AVFrame *frame = frameDecoded;
     if (rt < 0) {
       LMSLogError("Error sending packet for decoding: %d", rt);
@@ -105,7 +105,7 @@ void FFMDecoder::didReceivePacket(Packet *pkt) {
       av_frame_unref(frame);
     }
     
-    LMSLogVerbose("End decoding frame: %p", avpkt);
+    LMSLogVerbose("End decoding frame: pts=%" PRIi64, avpkt.pts);
     notifyDecoderEvent(pkt, 1);
     
     lms::release(pkt);

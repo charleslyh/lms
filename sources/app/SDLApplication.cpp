@@ -59,6 +59,8 @@ void SDLApplication::run(SDLAppDelegate *delegate) {
   }
 
   delegate->willTerminateApplication();
+  
+  SDL_DestroyWindow(mainWindow);
 }
 
 static

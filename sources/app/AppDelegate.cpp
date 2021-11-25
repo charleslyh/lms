@@ -126,6 +126,76 @@ private:
   lms::DispatchQueue *queue;
 };
 
+class SDLFrameScaler : virtual public lms::Object {
+public:
+  SDLFrameScaler(int width, int height, AVPixelFormat inputFormat, AVPixelFormat outputFormat, bool reuseFrame = true) {
+    this->width        = width;
+    this->height       = height;
+    this->inputFormat  = inputFormat;
+    this->outputFormat = outputFormat;
+    
+    swsContext = sws_getContext(width, height, inputFormat, width, height, outputFormat, SWS_BILINEAR, NULL, NULL, NULL);
+    
+    if (reuseFrame) {
+      cacheFrame = createFrame();
+    }
+  }
+  
+  ~SDLFrameScaler() {
+    destroyFrame(cacheFrame);
+    sws_freeContext(swsContext);
+  }
+  
+  AVFrame *scale(AVFrame *iframe) {
+    assert(iframe->width == width);
+    assert(iframe->height == height);
+    assert(iframe->format == inputFormat);
+    
+    AVFrame *oframe = cacheFrame;
+
+    // 如果不进行帧复用，则每一次转换都创建一个新的帧
+    if (oframe == nullptr) {
+      oframe = createFrame();
+    }
+    
+    sws_scale(swsContext,
+              (uint8_t const *const *)iframe->data,
+              iframe->linesize,
+              0,
+              iframe->height,
+              oframe->data,
+              oframe->linesize);
+    
+    return  oframe;
+  }
+  
+private:
+  AVFrame *createFrame() {
+    int bufferSize = av_image_get_buffer_size(outputFormat, width, height, 32);
+    uint8_t *buffer = (uint8_t *)av_malloc(bufferSize);
+    
+    AVFrame *frame = av_frame_alloc();
+    av_image_fill_arrays(frame->data, frame->linesize, buffer, AV_PIX_FMT_YUV420P, width, height, 32);
+
+    return frame;
+  }
+  
+  void destroyFrame(AVFrame *frame) {
+    if (frame == nullptr) {
+      return;
+    }
+
+    av_freep(&frame);
+  }
+  
+private:
+  SwsContext *swsContext;
+  int width;
+  int height;
+  AVPixelFormat inputFormat;
+  AVPixelFormat outputFormat;
+  AVFrame *cacheFrame;
+};
 
 class SDLView : public lms::Render {
 protected:
@@ -142,72 +212,51 @@ protected:
                                 par->width,
                                 par->height);
     
-    sws_ctx = sws_getContext(par->width,
-                             par->height,
-                             (AVPixelFormat)par->format,
-                             par->width,
-                             par->height,
-                             AV_PIX_FMT_YUV420P,
-                             SWS_BILINEAR,
-                             NULL,
-                             NULL,
-                             NULL);
-    
-    int numBytes = av_image_get_buffer_size(AV_PIX_FMT_YUV420P,
-                                            par->width,
-                                            par->height,
-                                            32);
-    
-    buffer = (uint8_t *)av_malloc(numBytes * sizeof(uint8_t));
-    
-    yuv = av_frame_alloc();
-    av_image_fill_arrays(yuv->data, yuv->linesize, buffer, AV_PIX_FMT_YUV420P, par->width, par->height, 32);
+    // 当输入的帧格式不是YV12时，需要对其进行格式转换，否则无法将yuv数据copy到texture中
+    if (par->format != AV_PIX_FMT_YUV420P) {
+      scaler = new SDLFrameScaler(par->width, par->height, (AVPixelFormat)par->format, AV_PIX_FMT_YUV420P);
+    }
   }
   
   void stop() override {
+    lms::release(scaler);
+    
+    SDL_DestroyTexture(texture);
+    texture = nullptr;
+    
+    SDL_DestroyRenderer(renderer);
+    renderer = nullptr;
   }
   
 protected:
   void didReceiveFrame(lms::Frame *frm) override {
-    assert(sws_ctx);
-      
-    auto frame = (AVFrame *)frm;
+    auto frame = av_frame_clone((AVFrame *)frm);
     
     double ts = frame->best_effort_timestamp * av_q2d(st->time_base);
-       
     LMSLogVerbose("Render video frame | ts:%.2lf, pts:%lld", ts, frame->pts);
-    rect.x = 0;
-    rect.y = 0;
-    rect.w = st->codecpar->width;
-    rect.h = st->codecpar->height;
 
-    sws_scale(sws_ctx,
-              (uint8_t const *const *)frame->data,
-              frame->linesize,
-              0,
-              st->codecpar->height,
-              yuv->data,
-              yuv->linesize);
+    lms::dispatchAsync(lms::mainQueue(), [this, frame] () {
+      AVFrame *yuv = scaler ? scaler->scale(frame) : frame;
 
-    SDL_UpdateYUVTexture(texture,
-                         &rect,
-                         yuv->data[0], yuv->linesize[0],
-                         yuv->data[1], yuv->linesize[1],
-                         yuv->data[2], yuv->linesize[2]);
+      SDL_UpdateYUVTexture(texture,
+                           NULL,
+                           yuv->data[0], yuv->linesize[0],
+                           yuv->data[1], yuv->linesize[1],
+                           yuv->data[2], yuv->linesize[2]);
+      
+      av_frame_unref(frame);
 
-    SDL_RenderClear(renderer);
-    SDL_RenderCopy(renderer, texture, NULL, NULL);
-    SDL_RenderPresent(renderer);
+      SDL_RenderClear(renderer);
+      SDL_RenderCopy(renderer, texture, NULL, NULL);
+      SDL_RenderPresent(renderer);
+    });
   }
   
 private:
-  AVStream *st;
-  struct SwsContext *sws_ctx  = nullptr;
-  uint8_t           *buffer   = nullptr;
-  AVFrame           *yuv      = nullptr;
-  SDL_Renderer      *renderer = nullptr;
-  SDL_Texture       *texture  = nullptr;
-  SDL_Rect           rect;
+  AVStream       *st;
+  SDL_Renderer   *renderer = nullptr;
+  SDL_Texture    *texture = nullptr;
+  SDLFrameScaler *scaler = nullptr;
 };
 
 struct FPSTimer {
@@ -235,8 +284,7 @@ static int fpsTimerFunc(FPSTimer *timer) {
   while(!timer->shouldQuit) {
     LMSLogVerbose("FPS timer callback on: %u", SDL_GetTicks());
 
-    lms::dispatchAsync(lms::mainQueue(), timer->runnable);
-//    timer->runnable->run();
+    timer->runnable->run();
     
     // 避免 runnable 执行过快（小于1ms)，导致下面的delay计算结果为0
     // 从而进入短暂的忙循环
@@ -307,7 +355,6 @@ public:
 private:
   lms::Player *player;
 };
-
 
 int main(int argc, char *argv[]) {
   SDLApplication app(argc, argv);
