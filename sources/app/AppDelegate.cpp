@@ -240,11 +240,21 @@ protected:
     win = SDL_CreateWindow("LMS Window",
                            SDL_WINDOWPOS_CENTERED,
                            SDL_WINDOWPOS_CENTERED,
-                           par->width,
-                           par->height,
+                           par->width / 2,
+                           par->height / 2,
                            SDL_WINDOW_METAL | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE);
     
-    Uint32 renderFlags = SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE;
+    Uint32 renderFlags = SDL_RENDERER_ACCELERATED | SDL_RENDERER_TARGETTEXTURE;
+
+    // 仅当视频帧率小于垂直同步刷新帧率时，开可能开启垂直同步能力。否则会因为刷新率过高，导致SDL_RenderPresent自发阻塞等待
+    // 上一次VSync结束。从而导致每一帧的渲染都会有极高的时延。为了避免过于两者过于极致地接近。所以引入了一个误差范围(0.8)
+    SDL_DisplayMode displayMode;
+    SDL_GetWindowDisplayMode(win, &displayMode);
+    double fps = av_q2d(st->avg_frame_rate);
+    if (fps < displayMode.refresh_rate * 0.8) {
+      renderFlags |= SDL_RENDERER_PRESENTVSYNC;
+    }
+
     renderer = SDL_CreateRenderer(win, -1, renderFlags);
     
     texture = SDL_CreateTexture(renderer,
@@ -287,8 +297,11 @@ protected:
     
     double ts = frame->best_effort_timestamp * av_q2d(st->time_base);
     LMSLogVerbose("Render video frame | ts:%.2lf, pts:%lld", ts, frame->pts);
-
+    
+    // 渲染、UI相关的处理只能在主线程调度
     lms::dispatchAsync(lms::mainQueue(), [this, frame] () {
+      Uint32 t0 = SDL_GetTicks();
+
       AVFrame *yuv = scaler ? scaler->scale(frame) : frame;
 
       SDL_UpdateYUVTexture(texture,
@@ -297,6 +310,8 @@ protected:
                            yuv->data[1], yuv->linesize[1],
                            yuv->data[2], yuv->linesize[2]);
             
+      Uint32 t1 = SDL_GetTicks();
+
       int winWidth, winHeight;
       SDL_GL_GetDrawableSize(win, &winWidth, &winHeight);
       SDL_Rect bounds = {0, 0, winWidth, winHeight};
@@ -306,8 +321,12 @@ protected:
       SDL_RenderClear(renderer);
       SDL_RenderCopy(renderer, texture, NULL, &drawRect);
       SDL_RenderPresent(renderer);
-      
+
+      Uint32 t2 = SDL_GetTicks();
+
       av_frame_unref(frame);
+
+      LMSLogInfo("Render cost: total=%2u, texture=%2u, present=%2u", t2 - t0, t1 - t0, t2 - t1);
     });
   }
   

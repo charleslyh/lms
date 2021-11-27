@@ -50,7 +50,10 @@ static inline const char* stacktrace_caller_frame_desc(const char *prefix, int o
   
   const int desclen = 512;
   char *desc = (char *)malloc(desclen);
-  
+  if (prefix) {
+    desc += snprintf(desc, desclen, "[%s] ", prefix);
+  }
+
   if (begin_name && begin_offset && end_offset && begin_name < begin_offset) {
     *begin_name++ = '\0';
     *begin_offset++ = '\0';
@@ -64,15 +67,15 @@ static inline const char* stacktrace_caller_frame_desc(const char *prefix, int o
     char* ret = abi::__cxa_demangle(begin_name, funcname, &funcnamesize, &status);
     if (status == 0) {
       funcname = ret; // use possibly realloc()-ed string
-      snprintf(desc, desclen, "[%s] %s+%s", prefix, funcname, begin_offset);
+      snprintf(desc, desclen, "%s+%s", funcname, begin_offset);
     } else {
       // demangling failed. Output function name as a C function with
       // no arguments.
-      snprintf(desc, desclen, "[%s] %s()+%s", prefix, begin_name, begin_offset);
+      snprintf(desc, desclen, "%s()+%s", begin_name, begin_offset);
     }
   } else {
     // couldn't parse the line? print the whole line.
-    snprintf(desc, desclen, "[%s] %s", prefix, caller_symbol);
+    snprintf(desc, desclen, "%s", caller_symbol);
   }
   
   free(funcname);

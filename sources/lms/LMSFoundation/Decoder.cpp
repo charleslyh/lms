@@ -21,7 +21,6 @@ public:
 
     codecContext = avcodec_alloc_context3(codec);
     int rt = avcodec_parameters_to_context(codecContext, params);
-    codecContext->time_base = stream->time_base;
     if (rt != 0) {
       LMSLogError("Couldn't copy codec context: %d", rt);
       return;

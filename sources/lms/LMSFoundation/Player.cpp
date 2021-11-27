@@ -462,7 +462,7 @@ public:
 
 public:
   void preload() {
-    this->source->loadPackets(100);
+    this->source->loadPackets(10);
   }
  
   void didRunRenderLoop(RenderDriver* driver) override {
@@ -470,7 +470,7 @@ public:
 
     LMSLogVerbose("RenderDriver: %p, cachedPlayingTime: %.2lf", driver, driver->cachedPlayingTime());
     if (driver->cachedPlayingTime() < 1.0) {
-      this->source->loadPackets(10);
+      this->source->loadPackets(5);
     }
   }
   
