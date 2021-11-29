@@ -1,6 +1,7 @@
 #include "LMSFoundation/Decoder.h"
 #include "LMSFoundation/Logger.h"
 #include "LMSFoundation/Packet.h"
+#include "LMSFoundation/Runtime.h"
 extern "C" {
 #include <libavcodec/avcodec.h>
 }

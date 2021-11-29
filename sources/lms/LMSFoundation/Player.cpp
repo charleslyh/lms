@@ -4,6 +4,7 @@
 #include "LMSFoundation/Render.h"
 #include "LMSFoundation/Buffer.h"
 #include "LMSFoundation/Logger.h"
+#include "LMSFoundation/Runtime.h"
 extern "C" {
   #include <libavcodec/avcodec.h>
   #include "libavutil/avutil.h"
@@ -19,6 +20,8 @@ extern "C" {
 
 namespace lms {
 
+constexpr double InvalidPlayingTime = -1.0;
+
 class TimeSync : virtual public Object {
 public:
   TimeSync() {
@@ -33,6 +36,7 @@ public:
   }
   
   void updateTimePivot(double time) {
+    LMSLogVerbose("time=%lf", time);
     timePivot  = time;
     tickPivot = SDL_GetTicks();
   }
@@ -314,9 +318,14 @@ public:
     render->start(meta);
     
     double fps = av_q2d(stream->avg_frame_rate);
-    double spf = 1.0 / fps; // second per frame
+    double spf = 1.0 / fps; // second per frame, also timer interval
     
-    fpsTimerId = lms::dispatchAsyncPeriodically(mainQueue(), fps, [this, spf] {
+    fpsTimer = scheduleTimer("FPSTimer", spf, [this, spf] {
+      double playingTime = timeSync->getPlayingTime();
+      if (playingTime < 0) {
+        return;
+      }
+      
       AVFrame *frame = nullptr;
 
       // 从buffer中循环取出匹配当前播放时间的图像帧，或者buffer为空，则终止
@@ -329,7 +338,6 @@ public:
         }
 
         double frameTime = frame->best_effort_timestamp * av_q2d(stream->time_base);
-        double playingTime = timeSync->getPlayingTime();
 
         // deviation > 0 表示当前视频帧的应播时间大于当前播放时间（待播帧）
         // deviation < 0 表示当前视频帧的应播时间小于当前播放时间（迟滞帧），超过一定时间（tollerance）则认为是过期帧
@@ -376,7 +384,8 @@ public:
   }
   
   void stop() override {
-    lms::cancelPeriodicObj(mainQueue(), fpsTimerId);
+    invalidateTimer(fpsTimer);
+    
     render->stop();
   }
   
@@ -392,8 +401,8 @@ public:
 private:
   AVStream *stream;
   Render   *render;
+  Timer    *fpsTimer;
   TimeSync *timeSync;
-  PeriodicJobId fpsTimerId;
   FramesBuffer<AVFrame *> *buffer;
 };
 
@@ -466,9 +475,8 @@ public:
   }
  
   void didRunRenderLoop(RenderDriver* driver) override {
-    LMSLogVerbose(nullptr);
-
     LMSLogVerbose("RenderDriver: %p, cachedPlayingTime: %.2lf", driver, driver->cachedPlayingTime());
+    
     if (driver->cachedPlayingTime() < 1.0) {
       this->source->loadPackets(5);
     }
@@ -536,6 +544,12 @@ void Player::play() {
     LMSLogError("Failed creating video & audio stream");
     return;
   }
+  
+  // [#55 避免视频的头几帧被丢弃]
+  // 在player启动播放时，会立即开始帧渲染。但是视频的播放可能早于处理音频第一帧的时间。而播放时间轴的初始化是在音频首帧播放
+  // 时设置的。这会导致部分部分视频帧被丢弃。所以，在astream, vstream启动前，应手动重置播放时间轴为无效状态。直到音频首帧加载后将时间轴
+  // 置零为止。
+  timesync->updateTimePivot(InvalidPlayingTime);
   
   if (vstream) vstream->start();
   if (astream) astream->start();

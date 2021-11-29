@@ -10,7 +10,7 @@
 #include <algorithm>
 
 #ifndef LMS_LEAKS_TRACING // 可能在外部构建命令中通过 -DLMS_LEAKS_TRACING=？指定，从而避免代码修改
-#  define LMS_LEAKS_TRACING 0
+#  define LMS_LEAKS_TRACING 1
 #endif
 
 namespace lms {
@@ -20,6 +20,7 @@ protected:
   Object();
   virtual ~Object();
 
+  // 声明为private，防止被直接调用
 private:
   void ref();
   void unref(bool postphone);
@@ -65,44 +66,16 @@ T autoRelease(T object) {
 
 void drainAutoReleasePool();
 
-class Runnable : virtual public Object {
-public:
-  virtual void run() = 0;
-};
-
-
-class DispatchQueue : virtual public Object {
-public:
-  virtual void async(Runnable *runnable) = 0;
-  virtual int asyncPeriodically(double period, Runnable *runnable) = 0;
-  virtual void cancelPeriodicalJob(int jobId) = 0;
-};
-
 
 typedef struct {
-  DispatchQueue *dispatchQueue;
 } InitParams;
 
-void init(InitParams params);
+void init(InitParams params = {});
 void unInit();
 
-
-typedef int (*ActionBlock)(void *context, void *data1, void *data2);
-
-void dispatchAsync(DispatchQueue *queue, Runnable *runnable);
-void dispatchAsync(DispatchQueue *queue, ActionBlock block, void *context, void *data1 = nullptr, void *data2 = nullptr);
-void dispatchAsync(DispatchQueue *queue, std::function<void()> lambda);
-
-typedef int PeriodicJobId;
-
-PeriodicJobId dispatchAsyncPeriodically(DispatchQueue *queue, double period, std::function<void()> lambda);
-void cancelPeriodicObj(DispatchQueue *queue, PeriodicJobId jobId);
-
-void stopPeriodicalQueues();
+class DispatchQueue;
 
 DispatchQueue *mainQueue();
-
-DispatchQueue *createDispatchQueue(const char *queueName);
 
 typedef std::map<std::string, void*> Metadata;
 typedef void Frame;

@@ -14,12 +14,7 @@ target_link_libraries(demo
     ${FFMPEG_LIBRARIES}
     ${SDL2_LIBRARY}
     LMSFoundation
-)
-
-target_sources(demo
-  PRIVATE
-    SDLApplication.cpp
-    SDLApplication.h
+    plugins
 )
 
 target_sources(demo

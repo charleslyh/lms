@@ -1,15 +1,10 @@
 #pragma once
 
-#include "LMSFoundation/Foundation.h"
-#include <list>
-#include <memory>
-
 class SDLAppDelegate {
 public:
   virtual void didFinishLaunchingApplication(int argc, char **argv) = 0;
   virtual void willTerminateApplication() = 0;
 };
-
 
 class SDLApplication {
 public:
@@ -20,7 +15,3 @@ private:
   int  argc;
   char **argv;
 };
-
-
-void SDL_DispatchRunnable(lms::Runnable *runnable);
-int SDL_ScheduleRunnable(int delayMS, lms::Runnable *runnalbe);

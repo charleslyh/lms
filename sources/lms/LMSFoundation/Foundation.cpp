@@ -1,5 +1,6 @@
 #include "LMSFoundation/Foundation.h"
 #include "LMSFoundation/Logger.h"
+#include "LMSFoundation/Runtime.h"
 #include <cstdio>
 #include <list>
 #include <algorithm>
@@ -46,7 +47,7 @@ public:
       if (objExist) {
         std::list<std::string>& itsTraces = traces[obj];
         const char *trace = stacktrace_caller_frame_desc(type, offset + 1);
-        itsTraces.push_back("");
+        itsTraces.push_back(trace);
         free((void *)trace);
       }
     }
@@ -112,7 +113,7 @@ class Core {
 public:
   explicit Core(DispatchQueue *mainQueue) {
     this->arpMtx    = SDL_CreateMutex();
-    this->mainQueue = lms::retain(mainQueue);
+    this->mainQueue = retain(mainQueue);
   }
 
   ~Core() {
@@ -123,7 +124,6 @@ public:
 public:
   std::list<Object *> autoReleasePool;
   SDL_mutex *arpMtx;
-  
   DispatchQueue *mainQueue;
 };
 
@@ -166,82 +166,17 @@ void drainAutoReleasePool() {
 
 
 void init(InitParams params) {
-  assert(params.dispatchQueue != nullptr);
-
-  core = new Core(params.dispatchQueue);
+  auto mq = createDispatchQueue("lms_main");
+  core = new Core(mq);
+  release(mq);
 }
-
 
 void unInit() {
   delete core;
 }
 
-
 DispatchQueue *mainQueue() {
   return core->mainQueue;
-}
-
-DispatchQueue *createDispatchQueue(const char *queueName) {
-  return lms::retain(core->mainQueue);
-}
-
-void dispatchAsync(DispatchQueue *queue, Runnable *runnable) {
-  queue->async(runnable);
-}
-
-void dispatchAsync(DispatchQueue *queue, ActionBlock block, void *context, void *data1, void *data2) {
-  class ActionBlockRunnable : public Runnable {
-  public:
-    ActionBlockRunnable(ActionBlock block, void *context, void *data1, void *data2)
-    : block(block) {
-      this->context = context;
-      this->data1   = data1;
-      this->data2   = data2;
-    }
-
-    void run() override {
-      block(context, data1, data2);
-    }
-
-  private:
-    ActionBlock block;
-    void *context;
-    void *data1;
-    void *data2;
-  };
-
-  queue->async(autoRelease(new ActionBlockRunnable(block, context, data1, data2)));
-}
-
-class LambdaRunnable : public Runnable {
-public:
-  LambdaRunnable(std::function<void()> l)
-  : lambda(l) {
-  }
-
-  void run() override {
-    lambda();
-  }
-
-private:
-  std::function<void()> lambda;
-};
-
-void dispatchAsync(DispatchQueue *queue, std::function<void()> lambda) {
-  auto r = new LambdaRunnable(lambda);
-  queue->async(r);
-  lms::release(r);
-}
-
-PeriodicJobId dispatchAsyncPeriodically(DispatchQueue *queue, double period, std::function<void()> lambda) {
-  auto r = new LambdaRunnable(lambda);
-  PeriodicJobId jobId = queue->asyncPeriodically(period, r);
-  lms::release(r);
-  return jobId;
-}
-
-void cancelPeriodicObj(DispatchQueue *queue, PeriodicJobId jobId) {
-  queue->cancelPeriodicalJob(jobId);
 }
 
 }

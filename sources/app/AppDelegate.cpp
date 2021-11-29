@@ -6,7 +6,8 @@
 #include "LMSFoundation/Logger.h"
 #include "LMSFoundation/Buffer.h"
 #include "LMSFoundation/Packet.h"
-#include "SDLApplication.h"
+#include "LMSFoundation/Runtime.h"
+#include "plugins/Runtime+SDL.h"
 
 extern "C" {
   #include <libavutil/imgutils.h>
@@ -51,9 +52,9 @@ SDL_Rect calcDrawRect(ScaleMode mode, int srcWidth, int srcHeight, SDL_Rect boun
   return drawRect;
 }
 
-class VideoFile : public lms::PassiveMediaSource {
+class FFVideoFile : public lms::PassiveMediaSource {
 public:
-  VideoFile(const char *path) {
+  FFVideoFile(const char *path) {
     LMSLogVerbose("path: %s", path);
 
     this->context = nullptr;
@@ -61,7 +62,7 @@ public:
     this->queue   = lms::createDispatchQueue("video_file");
   }
 
-  ~VideoFile() {
+  ~FFVideoFile() {
     assert(context == nullptr);
 
     lms::release(this->queue);
@@ -159,9 +160,9 @@ private:
   lms::DispatchQueue *queue;
 };
 
-class SDLFrameScaler : virtual public lms::Object {
+class SWSFrameScaler : virtual public lms::Object {
 public:
-  SDLFrameScaler(int width, int height, AVPixelFormat inputFormat, AVPixelFormat outputFormat, bool reuseFrame = true) {
+  SWSFrameScaler(int width, int height, AVPixelFormat inputFormat, AVPixelFormat outputFormat, bool reuseFrame = true) {
     this->width        = width;
     this->height       = height;
     this->inputFormat  = inputFormat;
@@ -174,7 +175,7 @@ public:
     }
   }
   
-  ~SDLFrameScaler() {
+  ~SWSFrameScaler() {
     destroyFrame(cacheFrame);
     sws_freeContext(swsContext);
   }
@@ -265,7 +266,7 @@ protected:
     
     // 当输入的帧格式不是YV12时，需要对其进行格式转换，否则无法将yuv数据copy到texture中
     if (par->format != AV_PIX_FMT_YUV420P) {
-      scaler = new SDLFrameScaler(par->width, par->height, (AVPixelFormat)par->format, AV_PIX_FMT_YUV420P);
+      scaler = new SWSFrameScaler(par->width, par->height, (AVPixelFormat)par->format, AV_PIX_FMT_YUV420P);
     }
   }
   
@@ -335,76 +336,17 @@ private:
   SDL_Window     *win;
   SDL_Renderer   *renderer  = nullptr;
   SDL_Texture    *texture   = nullptr;
-  SDLFrameScaler *scaler    = nullptr;
+  SWSFrameScaler *scaler    = nullptr;
   ScaleMode       scaleMode = ScaleModeAspectFit;
 };
 
-struct FPSTimer {
-  bool           shouldQuit;
-  double         period;
-  lms::Runnable *runnable;
-  
-  FPSTimer(double period, lms::Runnable *r) {
-    this->shouldQuit = false;
-    this->period     = period;
-    this->runnable   = lms::retain(r);
-  }
-  
-  ~FPSTimer() {
-    lms::release(runnable);
-  }
-};
-
-static int fpsTimerFunc(FPSTimer *timer) {
-  const double delayPerFrame = 1.0 / timer->period * 1000;
-  const Uint32 preDelay = (Uint32)(delayPerFrame * 0.2);
-  Uint32 begin  = SDL_GetTicks();
-  LMSLogDebug("begin: %u, delayPerFrame: %lf", begin, delayPerFrame);
-  
-  while(!timer->shouldQuit) {
-    LMSLogVerbose("FPS timer callback on: %u", SDL_GetTicks());
-
-    timer->runnable->run();
-    
-    // 避免 runnable 执行过快（小于1ms)，导致下面的delay计算结果为0
-    // 从而进入短暂的忙循环
-    SDL_Delay(preDelay);
-
-    Uint32 now = SDL_GetTicks();
-    double diff = (double)(now - begin) / delayPerFrame;
-    int delay = (int)((1.0 - diff + std::floor(diff)) * delayPerFrame);
-
-    Uint32 expectedBreakPoint = SDL_GetTicks() + delay;
-    do {
-      delay = expectedBreakPoint - SDL_GetTicks();
-      
-      // 如果使用最小睡眠单位1ms不断重复，仍然会带来一定的CPU负载
-      // 所以如果预期时间较长时，可以睡眠相对长的时间段，减轻这种负载
-      if (delay > 10) {
-        SDL_Delay(delay / 2);
-      } else if (delay >= 5) {
-        SDL_Delay(3);
-      } else if (delay >= 1) {
-        SDL_Delay(1);
-      }
-    } while(SDL_GetTicks() < expectedBreakPoint);
-  }
-
-  delete timer;
-}
-
-static FPSTimer *__timer;
-static SDL_Thread* __timerThread;
-
-static VideoFile *src;
-
-class PlayerAppDelegate: public SDLAppDelegate, public lms::DispatchQueue {
+class PlayerAppDelegate: public SDLAppDelegate {
 public:  
   void didFinishLaunchingApplication(int argc, char **argv) override {
-    lms::init({this});
+    lms::init();
     lms::setLogLevel(lms::LogLevelVerbose);
 
-    auto src = lms::autoRelease(new VideoFile(argv[1]));
+    auto src = lms::autoRelease(new FFVideoFile(argv[1]));
     player = new lms::Player(src, lms::autoRelease(new SDLView));
     player->play();
   }
@@ -416,22 +358,6 @@ public:
     lms::unInit();
   }
 
-public:
-  void async(lms::Runnable *runnable) override {
-    SDL_DispatchRunnable(runnable);
-  }
-  
-  int asyncPeriodically(double period, lms::Runnable *runnable) override {
-    assert(__timerThread == nullptr);
-    __timer = new FPSTimer(period, runnable);
-    __timerThread = SDL_CreateThread((SDL_ThreadFunction)fpsTimerFunc, "FPSTimer", __timer);
-  }
-  
-  void cancelPeriodicalJob(int jobId) override {
-    __timer->shouldQuit = true;
-    SDL_WaitThread(__timerThread, nullptr);
-  }
-
 private:
   lms::Player *player;
 };
@@ -440,10 +366,8 @@ int main(int argc, char *argv[]) {
   SDLApplication app(argc, argv);
   
   // 通过添加{}来明确delegate的释放时机，避免DumpLeaks误认为delegate为泄露资源
-  {
-    PlayerAppDelegate delegate;
-    app.run(&delegate);
-  }
+  PlayerAppDelegate delegate;
+  app.run(&delegate);
   
   lms::dumpLeaks();
 }

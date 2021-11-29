@@ -25,6 +25,13 @@ target_sources(LMSFoundation
     Render.h
     Packet.h
     Packet.cpp
-
+    
+    Runtime.h
+    RuntimeInternal.h
+    RuntimeInternal.cpp
+    
+    # 3rd-party libraries
     Stacktrace.h
 )
+
+target_link_libraries(LMSFoundation plugins)

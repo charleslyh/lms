@@ -50,6 +50,7 @@ static inline const char* stacktrace_caller_frame_desc(const char *prefix, int o
   
   const int desclen = 512;
   char *desc = (char *)malloc(desclen);
+  char *desc_str = desc;
   if (prefix) {
     desc += snprintf(desc, desclen, "[%s] ", prefix);
   }
@@ -81,7 +82,7 @@ static inline const char* stacktrace_caller_frame_desc(const char *prefix, int o
   free(funcname);
   free(symbollist);
   
-  return desc;
+  return desc_str;
 }
 
 /** Print a demangled stack backtrace of the caller function to FILE* out. */
