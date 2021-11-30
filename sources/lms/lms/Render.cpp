@@ -1,4 +1,4 @@
-#include "LMSFoundation/Render.h"
+#include "lms/Render.h"
 
 namespace lms {
 

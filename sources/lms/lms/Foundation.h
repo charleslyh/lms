@@ -1,6 +1,6 @@
 #pragma once
 
-#include "LMSFoundation/Stacktrace.h"
+#include "lms/Stacktrace.h"
 #include <atomic>
 #include <functional>
 #include <map>

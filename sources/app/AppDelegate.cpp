@@ -1,13 +1,13 @@
-#include "LMSFoundation/Foundation.h"
-#include "LMSFoundation/MediaSource.h"
-#include "LMSFoundation/Player.h"
-#include "LMSFoundation/Decoder.h"
-#include "LMSFoundation/Render.h"
-#include "LMSFoundation/Logger.h"
-#include "LMSFoundation/Buffer.h"
-#include "LMSFoundation/Packet.h"
-#include "LMSFoundation/Runtime.h"
-#include "plugins/Runtime+SDL.h"
+#include "lms/Foundation.h"
+#include "lms/MediaSource.h"
+#include "lms/Player.h"
+#include "lms/Decoder.h"
+#include "lms/Render.h"
+#include "lms/Logger.h"
+#include "lms/Buffer.h"
+#include "lms/Packet.h"
+#include "lms/Runtime.h"
+#include "extension/sdl/Runtime+SDL.h"
 
 extern "C" {
   #include <libavutil/imgutils.h>
@@ -122,7 +122,8 @@ public:
     };
     
     for (int i = 0; i< numberRequested; i += 1) {
-      dispatchAsync(lms::mainQueue(), [this] () {
+      // TODO: 使用独立的queue来加载数据
+      dispatchAsync(lms::mainQueue(), [this] {
         AVPacket *avpkt = av_packet_alloc();
         int rt = av_read_frame(context, avpkt);
         if (rt >= 0) {
@@ -133,8 +134,7 @@ public:
                         avpkt->dts,
                         avpkt->pts,
                         avpkt->duration,
-                        avpkt->size);
-  
+                        avpkt->size);  
           
           lms::ResourceHolder *holder = new AVPacketHolder;
           lms::Packet *pkt = new lms::Packet(avpkt, holder);
@@ -148,8 +148,6 @@ public:
           lms::release(pkt);
           lms::release(holder);
         }
-      
-        return 0;
       });
     }
   }
@@ -354,7 +352,6 @@ public:
   void willTerminateApplication() override {
     player->stop();
     lms::release(player);
-
     lms::unInit();
   }
 

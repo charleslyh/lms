@@ -6,7 +6,7 @@
 //
 
 #pragma once
-#include "LMSFoundation/Foundation.h"
+#include "lms/Foundation.h"
 #include <algorithm>
 
 namespace lms {
@@ -19,19 +19,20 @@ public:
 class DispatchQueue : virtual public Object {
 public:
   virtual void async(Runnable *runnable) = 0;
+  virtual void invalidate() = 0;
 };
 
 DispatchQueue *createDispatchQueue(const char *queueName);
 
 void dispatchAsync(DispatchQueue *queue, Runnable *runnable);
-void dispatchAsync(DispatchQueue *queue, std::function<void()> lambda);
+void dispatchAsync(DispatchQueue *queue, std::function<void()> action);
 
-class Timer;
+class Timer : virtual public Object {};
 
 // Creates a timer and schedules it on a new thread.
-Timer *scheduleTimer(const char *name, double interval, std::function<void()> lambda);
+Timer *scheduleTimer(const char *name, double interval, std::function<void()> action);
 
-// Invalidates the timer scheduled by scheduleTimer, and release it after invalidated.
+// Invalidates the timer scheduled by scheduleTimer()
 void invalidateTimer(Timer *timer);
 
 }

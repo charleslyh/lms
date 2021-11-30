@@ -1,13 +1,13 @@
 cmake_minimum_required(VERSION 3.13)
 
-add_library(LMSFoundation STATIC)
+add_library(lms STATIC)
 
-target_include_directories(LMSFoundation
+target_include_directories(lms
   PRIVATE
     ${FFMPEG_INCLUDE_DIRS}
 )
 
-target_sources(LMSFoundation
+target_sources(lms
   PRIVATE
     Buffer.cpp
     Buffer.h
@@ -23,15 +23,15 @@ target_sources(LMSFoundation
     Player.h
     Render.cpp
     Render.h
-    Packet.h
     Packet.cpp
-    
+    Packet.h
     Runtime.h
-    RuntimeInternal.h
-    RuntimeInternal.cpp
     
+    RuntimeInternal.cpp
+    RuntimeInternal.h
+
     # 3rd-party libraries
     Stacktrace.h
 )
 
-target_link_libraries(LMSFoundation plugins)
+target_link_libraries(lms ext_sdl)

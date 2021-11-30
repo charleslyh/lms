@@ -1,6 +1,6 @@
 #pragma once
 
-#include "LMSFoundation/Foundation.h"
+#include "lms/Foundation.h"
 
 namespace lms {
 

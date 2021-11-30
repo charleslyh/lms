@@ -1,6 +1,6 @@
-#include "LMSFoundation/Foundation.h"
-#include "LMSFoundation/Logger.h"
-#include "LMSFoundation/Runtime.h"
+#include "lms/Foundation.h"
+#include "lms/Logger.h"
+#include "lms/Runtime.h"
 #include <cstdio>
 #include <list>
 #include <algorithm>
@@ -173,10 +173,11 @@ void init(InitParams params) {
 
 void unInit() {
   delete core;
+  core = nullptr;
 }
 
 DispatchQueue *mainQueue() {
-  return core->mainQueue;
+  return core ? core->mainQueue : nullptr;
 }
 
 }

@@ -1,7 +1,7 @@
-#include "LMSFoundation/Decoder.h"
-#include "LMSFoundation/Logger.h"
-#include "LMSFoundation/Packet.h"
-#include "LMSFoundation/Runtime.h"
+#include "lms/Decoder.h"
+#include "lms/Logger.h"
+#include "lms/Packet.h"
+#include "lms/Runtime.h"
 extern "C" {
 #include <libavcodec/avcodec.h>
 }
@@ -57,6 +57,14 @@ void FFMDecoder::start() {
 
 void FFMDecoder::stop() {
   LMSLogInfo("stopDecoder: %p", this);
+
+  // TODO: 完整的流程应该是
+  // TODO: 1. 置状态为stopping
+  // TODO: 2. didReceivePacket拒处理新的数据包（也许应该由上层来保证？例如先拆除掉上游节点）
+  // TODO: 3. drain queue中所有的解码 blocks，且解码block应该正确判断状态，仅当running的时候才可以解码
+  // TODO: 4. 置状态未stopped
+  // TODO: 5. 释放其它资源
+
   avcodec_close(codecContext);
 }
 
@@ -76,6 +84,7 @@ void FFMDecoder::didReceivePacket(Packet *pkt) {
   // 这里对pkt进行了一次人为引用（或者需要clone？）
   lms::retain(pkt);
   
+  // TODO: 使用独立的queue来进行解码
   dispatchAsync(mainQueue(), [this, pkt]() {
     notifyDecoderEvent(pkt, 0);
        
@@ -107,10 +116,8 @@ void FFMDecoder::didReceivePacket(Packet *pkt) {
     
     LMSLogVerbose("End decoding frame: pts=%" PRIi64, avpkt.pts);
     notifyDecoderEvent(pkt, 1);
-    
+
     lms::release(pkt);
-    
-    return 0;
   });
 }
 

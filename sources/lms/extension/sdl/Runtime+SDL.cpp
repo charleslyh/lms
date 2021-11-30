@@ -1,7 +1,7 @@
-#include "plugins/Runtime+SDL.h"
-#include "LMSFoundation/Runtime.h"
-#include "LMSFoundation/RuntimeInternal.h"
-#include "LMSFoundation/Logger.h"
+#include "extension/sdl/Runtime+SDL.h"
+#include "lms/Runtime.h"
+#include "lms/RuntimeInternal.h"
+#include "lms/Logger.h"
 extern "C" {
 #include <SDL2/SDL.h>
 }
@@ -33,39 +33,62 @@ void SDLApplication::run(SDLAppDelegate *delegate) {
 
     if (event.type == RunnableEvent) {
       auto r = (lms::Runnable *)event.user.data1;
+      
       r->run();
+
       lms::release(r);
     }
 
     lms::drainAutoReleasePool();
   }
   
-  // 清除那些已被分派，但未被执行的runnable任务。否则会造成资源泄漏
+  delegate->willTerminateApplication();
+  
+  // TODO: 任何已被调度的runnable，都应该在stop过程保证全部被调度完成后才可以终止
+  // TODO: 下面的清理工作是不应该存在的
   while(SDL_PollEvent(&event) == 1) {
     if (event.type == RunnableEvent) {
+      LMSLogVerbose("Cleanup runnable: %p", event.user.data1);
+      auto r = (lms::Runnable *)event.user.data1;
       lms::release((lms::Runnable *)event.user.data1);
     }
-  }
-
-  delegate->willTerminateApplication();
+  }  
 }
-
 
 namespace lms {
 
+class SDLTimer : public Timer {
+public:
+  const char    *name;
+  double         interval;
+  lms::Runnable *runnable;
+  SDL_Thread    *thread;
+  bool           shouldQuit;
 
-static int runtimeTimerThread_SDL(Timer *timer) {
+  SDLTimer(const char *name, double interval, lms::Runnable *r) {
+    this->name       = strdup(name);
+    this->shouldQuit = false;
+    this->interval   = interval;
+    this->runnable   = retain(r);
+  }
+  
+  ~SDLTimer() {
+    release(runnable);
+    free((void *)name);
+  }
+};
+
+static int runtimeTimerThread_SDL(SDLTimer *timer) {
   const double intervalMS = timer->interval * 1000;
-  const Uint32 preDelayMS = (Uint32)(intervalMS * 0.2);
+  const Uint32 predelayMS = (Uint32)(intervalMS * 0.2);
   Uint32 begin  = SDL_GetTicks();
   LMSLogDebug("Timer start: name=%s, begin=%u, interval=%lf", timer->name, begin, intervalMS);
   
   while(!timer->shouldQuit) {
-    LMSLogVerbose("Run timer on: ticks=%u", SDL_GetTicks());
     timer->runnable->run();
     
     // 避免 runnable 执行过快（小于1ms)，导致下面的delay计算结果为0，从而进入短暂的忙循环
-    SDL_Delay(preDelayMS);
+    SDL_Delay(predelayMS);
 
     Uint32 now = SDL_GetTicks();
     double diff = (double)(now - begin) / intervalMS;
@@ -90,45 +113,49 @@ static int runtimeTimerThread_SDL(Timer *timer) {
   LMSLogDebug("Timer stop: name=%s", timer->name);
 }
 
-Timer *scheduleTimer(const char *name, double interval, std::function<void()> lambda) {
+Timer *scheduleTimer(const char *name, double interval, std::function<void()> action) {
   if (name == nullptr) {
     name = "unkown";
   }
     
-  auto r = new LambdaRunnable(lambda);
-  Timer *timer = new Timer(name, interval, r);
+  auto r = new LambdaRunnable(action);
+  auto timer = new SDLTimer(name, interval, r);
   release(r);
   
-  timer->data = SDL_CreateThread((SDL_ThreadFunction)runtimeTimerThread_SDL, name, timer);
+  timer->thread = SDL_CreateThread((SDL_ThreadFunction)runtimeTimerThread_SDL, name, timer);
   
   return timer;
 }
 
-void invalidateTimer(Timer *timer) {
-  if (timer == nullptr) {
+void invalidateTimer(Timer *t) {
+  if (t == nullptr) {
     return;
   }
-
-  auto thread = (SDL_Thread *)timer->data;
   
+  // timer 实例一定是经过 scheduleTimer 方法创建的，所以可以安全地进行强制类型转换
+  auto timer = static_cast<SDLTimer *>(t);
+
   timer->shouldQuit = true;
   
-  SDL_WaitThread(thread, nullptr);
-  
-  release(timer);
+  SDL_WaitThread(timer->thread, nullptr);  
 }
 
 class SDLMainQueue : public DispatchQueue {
 public:
   void async(lms::Runnable *runnable) override {
     SDL_Event event;
-    SDL_zero(event);
     
+    SDL_zero(event);
     event.type = RunnableEvent;
     event.user.data1 = lms::retain(runnable);
     event.user.data2 = nullptr;
     event.user.code  = 0;
+    
     SDL_PushEvent(&event);
+  }
+  
+  void invalidate() override {
+    
   }
 };
 

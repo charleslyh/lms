@@ -5,7 +5,7 @@
 //  Created by yuhuachli on 2021/11/29.
 //
 
-#include "LMSFoundation/RuntimeInternal.h"
+#include "lms/RuntimeInternal.h"
 
 namespace lms {
 
@@ -13,8 +13,8 @@ void dispatchAsync(DispatchQueue *queue, Runnable *runnable) {
   queue->async(runnable);
 }
 
-void dispatchAsync(DispatchQueue *queue, std::function<void()> lambda) {
-  auto r = new LambdaRunnable(lambda);
+void dispatchAsync(DispatchQueue *queue, std::function<void()> action) {
+  auto r = new LambdaRunnable(action);
   queue->async(r);
   lms::release(r);
 }

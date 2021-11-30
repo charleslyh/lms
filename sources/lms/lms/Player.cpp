@@ -1,10 +1,10 @@
-#include "LMSFoundation/Player.h"
-#include "LMSFoundation/MediaSource.h"
-#include "LMSFoundation/Decoder.h"
-#include "LMSFoundation/Render.h"
-#include "LMSFoundation/Buffer.h"
-#include "LMSFoundation/Logger.h"
-#include "LMSFoundation/Runtime.h"
+#include "lms/Player.h"
+#include "lms/MediaSource.h"
+#include "lms/Decoder.h"
+#include "lms/Render.h"
+#include "lms/Buffer.h"
+#include "lms/Logger.h"
+#include "lms/Runtime.h"
 extern "C" {
   #include <libavcodec/avcodec.h>
   #include "libavutil/avutil.h"
@@ -385,6 +385,7 @@ public:
   
   void stop() override {
     invalidateTimer(fpsTimer);
+    lms::release(fpsTimer);
     
     render->stop();
   }
@@ -559,11 +560,11 @@ void Player::play() {
 
 void Player::stop() {
   LMSLogInfo(nullptr);
-  
+    
+  source->close();
+
   if (astream) astream->stop();
   if (vstream) vstream->stop();
-
-  source->close();
 
   lms::release(vstream);
   vstream = nullptr;

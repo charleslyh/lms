@@ -1,4 +1,4 @@
-#include "LMSFoundation/Logger.h"
+#include "lms/Logger.h"
 extern "C" {
   #include <SDL2/SDL.h>
 }

@@ -13,8 +13,8 @@ target_link_libraries(demo
   PUBLIC
     ${FFMPEG_LIBRARIES}
     ${SDL2_LIBRARY}
-    LMSFoundation
-    plugins
+    lms
+    ext_sdl
 )
 
 target_sources(demo
