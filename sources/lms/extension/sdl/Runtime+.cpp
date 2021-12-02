@@ -1,4 +1,4 @@
-#include "Runtime+SDL.h"
+#include "Application.h"
 #include <lms/Runtime-.h>
 #include <lms/Logger.h>
 extern "C" {
