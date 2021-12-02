@@ -1,5 +1,5 @@
-#include "lms/MediaSource.h"
-#include "lms/Packet.h"
+#include "MediaSource.h"
+#include "Packet.h"
 
 namespace lms {
 

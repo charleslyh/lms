@@ -8,29 +8,35 @@ target_include_directories(lms
 )
 
 target_sources(lms
-  PRIVATE
-    Buffer.cpp
+  PUBLIC
     Buffer.h
-    Decoder.cpp
     Decoder.h
-    Foundation.cpp
     Foundation.h
-    Logger.cpp
     Logger.h
-    MediaSource.cpp
     MediaSource.h
-    Player.cpp
     Player.h
-    Render.cpp
     Render.h
-    Packet.cpp
-    Packet.h
     Runtime.h
     
-    RuntimeInternal.cpp
-    RuntimeInternal.h
+  PRIVATE
+    Runtime-.h
 
-    # 3rd-party libraries
+  PRIVATE
+    Buffer.cpp
+    Decoder.cpp
+    Foundation.cpp
+    Logger.cpp
+    MediaSource.cpp
+    Player.cpp
+    Render.cpp
+    Packet.cpp
+    Packet.h
+    Runtime.cpp
+)
+
+# 3rd-party libraries
+target_sources(lms
+  PRIVATE
     Stacktrace.h
 )
 

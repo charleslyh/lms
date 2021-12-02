@@ -1,13 +1,12 @@
-#include "lms/Foundation.h"
-#include "lms/MediaSource.h"
-#include "lms/Player.h"
-#include "lms/Decoder.h"
-#include "lms/Render.h"
-#include "lms/Logger.h"
-#include "lms/Buffer.h"
-#include "lms/Packet.h"
-#include "lms/Runtime.h"
-#include "extension/sdl/Runtime+SDL.h"
+#include <lms/Foundation.h>
+#include <lms/MediaSource.h>
+#include <lms/Player.h>
+#include <lms/Decoder.h>
+#include <lms/Render.h>
+#include <lms/Logger.h>
+#include <lms/Buffer.h>
+#include <lms/Packet.h>
+#include <extension/sdl/Runtime+SDL.h>
 
 extern "C" {
   #include <libavutil/imgutils.h>

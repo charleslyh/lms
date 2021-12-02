@@ -6,8 +6,8 @@
 //
 
 #pragma once
-#include "lms/Foundation.h"
-#include <algorithm>
+#include <lms/Foundation.h>
+#include <functional>
 
 namespace lms {
 

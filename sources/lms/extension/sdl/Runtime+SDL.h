@@ -1,5 +1,7 @@
 #pragma once
 
+#include <lms/Runtime.h>
+
 class SDLAppDelegate {
 public:
   virtual void didFinishLaunchingApplication(int argc, char **argv) = 0;

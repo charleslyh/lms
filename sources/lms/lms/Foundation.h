@@ -1,13 +1,10 @@
 #pragma once
 
-#include "lms/Stacktrace.h"
+#include <lms/Stacktrace.h>
 #include <atomic>
-#include <functional>
 #include <map>
 #include <string>
 #include <list>
-#include <set>
-#include <algorithm>
 
 #ifndef LMS_LEAKS_TRACING // 可能在外部构建命令中通过 -DLMS_LEAKS_TRACING=？指定，从而避免代码修改
 #  define LMS_LEAKS_TRACING 1

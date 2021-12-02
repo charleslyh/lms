@@ -1,7 +1,7 @@
-#include "lms/Decoder.h"
-#include "lms/Logger.h"
-#include "lms/Packet.h"
-#include "lms/Runtime.h"
+#include "Decoder.h"
+#include "Logger.h"
+#include "Packet.h"
+#include "Runtime.h"
 extern "C" {
 #include <libavcodec/avcodec.h>
 }

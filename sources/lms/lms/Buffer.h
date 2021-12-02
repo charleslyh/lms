@@ -1,8 +1,8 @@
 #pragma once
 
-#include "lms/Foundation.h"
-#include "lms/Decoder.h"
-#include "lms/Logger.h"
+#include <lms/Foundation.h>
+#include <lms/Decoder.h>
+#include <lms/Logger.h>
 extern "C" {
 #include <SDL2/SDL.h>
 }

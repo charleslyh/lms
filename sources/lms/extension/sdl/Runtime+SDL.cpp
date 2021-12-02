@@ -1,7 +1,6 @@
-#include "extension/sdl/Runtime+SDL.h"
-#include "lms/Runtime.h"
-#include "lms/RuntimeInternal.h"
-#include "lms/Logger.h"
+#include "Runtime+SDL.h"
+#include <lms/Runtime-.h>
+#include <lms/Logger.h>
 extern "C" {
 #include <SDL2/SDL.h>
 }

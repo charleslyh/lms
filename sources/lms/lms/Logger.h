@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lms/Foundation.h"
+#include <lms/Foundation.h>
 
 #if defined(__FILE_NAME__)
 #define __LMS_FILE__ __FILE_NAME__

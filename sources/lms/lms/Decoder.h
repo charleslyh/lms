@@ -1,8 +1,7 @@
 #pragma once
 
-#include "lms/Foundation.h"
-#include "lms/MediaSource.h"
-#include <list>
+#include <lms/Foundation.h>
+#include <lms/MediaSource.h>
 
 namespace lms {
 

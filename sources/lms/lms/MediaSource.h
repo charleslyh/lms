@@ -1,7 +1,7 @@
 #pragma once
 
-#include "lms/Foundation.h"
-#include "lms/Packet.h"
+#include <lms/Foundation.h>
+#include <lms/Packet.h>
 extern "C" {
   #include <libavformat/avformat.h>
 }

@@ -1,5 +1,5 @@
-#include "lms/Buffer.h"
-#include "lms/Logger.h"
+#include "Buffer.h"
+#include "Logger.h"
 
 namespace lms {
 

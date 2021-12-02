@@ -1,6 +1,6 @@
-#include "lms/Foundation.h"
-#include "lms/Logger.h"
-#include "lms/Runtime.h"
+#include "Foundation.h"
+#include "Logger.h"
+#include "Runtime.h"
 #include <cstdio>
 #include <list>
 #include <algorithm>

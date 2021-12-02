@@ -1,10 +1,10 @@
-#include "lms/Player.h"
-#include "lms/MediaSource.h"
-#include "lms/Decoder.h"
-#include "lms/Render.h"
-#include "lms/Buffer.h"
-#include "lms/Logger.h"
-#include "lms/Runtime.h"
+#include "Player.h"
+#include "MediaSource.h"
+#include "Decoder.h"
+#include "Render.h"
+#include "Buffer.h"
+#include "Logger.h"
+#include "Runtime.h"
 extern "C" {
   #include <libavcodec/avcodec.h>
   #include "libavutil/avutil.h"
