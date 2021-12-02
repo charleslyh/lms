@@ -1,6 +1,7 @@
 #include "Foundation.h"
 #include "Logger.h"
 #include "Runtime.h"
+#include "Stacktrace.h"
 #include <cstdio>
 #include <list>
 #include <algorithm>
