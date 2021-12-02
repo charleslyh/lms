@@ -6,7 +6,7 @@
 #include <lms/Logger.h>
 #include <lms/Buffer.h>
 #include <lms/Packet.h>
-#include <extension/sdl/Application.h>
+#include <extension/sdl/SDLApplication.h>
 
 extern "C" {
   #include <libavutil/imgutils.h>

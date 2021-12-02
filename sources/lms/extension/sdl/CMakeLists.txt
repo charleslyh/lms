@@ -9,6 +9,6 @@ target_include_directories(ext_sdl
 
 target_sources(ext_sdl
   PRIVATE
-    Application.h
-    Runtime+.cpp
+    SDLApplication.h
+    SDLRuntime.cpp
 )
