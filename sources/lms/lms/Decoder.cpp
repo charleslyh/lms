@@ -83,9 +83,10 @@ void FFMDecoder::didReceivePacket(Packet *pkt) {
   // 由于下面的解码过程可能会被异步调度（延迟）处理，为了避免在函数‘立即’返回后，pkt资源被释放
   // 这里对pkt进行了一次人为引用（或者需要clone？）
   lms::retain(pkt);
+  std::shared_ptr<Packet> pktHolder(pkt, [] (Packet *pkt) { lms::release(pkt); });
   
   // TODO: 使用独立的queue来进行解码
-  dispatchAsync(mainQueue(), [this, pkt]() {
+  dispatchAsync(mainQueue(), [this, pkt, pktHolder]() {
     notifyDecoderEvent(pkt, 0);
        
     AVPacket avpkt = {0};
@@ -116,8 +117,6 @@ void FFMDecoder::didReceivePacket(Packet *pkt) {
     
     LMSLogVerbose("End decoding frame: pts=%" PRIi64, avpkt.pts);
     notifyDecoderEvent(pkt, 1);
-
-    lms::release(pkt);
   });
 }
 
