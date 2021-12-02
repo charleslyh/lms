@@ -8,9 +8,7 @@ target_include_directories(ext_sdl
 )
 
 target_sources(ext_sdl
-  PUBLIC
-    Runtime+SDL.h
-
   PRIVATE
+    Runtime+SDL.h
     Runtime+SDL.cpp
 )

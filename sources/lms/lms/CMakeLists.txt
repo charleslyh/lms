@@ -14,10 +14,11 @@ target_sources(lms
     Foundation.h
     Logger.h
     MediaSource.h
+    Packet.h
     Player.h
     Render.h
     Runtime.h
-    
+
   PRIVATE
     Runtime-.h
 
@@ -27,10 +28,9 @@ target_sources(lms
     Foundation.cpp
     Logger.cpp
     MediaSource.cpp
+    Packet.cpp
     Player.cpp
     Render.cpp
-    Packet.cpp
-    Packet.h
     Runtime.cpp
 )
 
@@ -40,4 +40,5 @@ target_sources(lms
     Stacktrace.h
 )
 
+# 具体link哪些
 target_link_libraries(lms ext_sdl)
