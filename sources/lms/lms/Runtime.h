@@ -19,7 +19,6 @@ public:
 class DispatchQueue : virtual public Object {
 public:
   virtual void async(Runnable *runnable) = 0;
-  virtual void invalidate() = 0;
 };
 
 DispatchQueue *createDispatchQueue(const char *queueName);

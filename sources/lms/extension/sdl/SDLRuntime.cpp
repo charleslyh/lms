@@ -152,10 +152,6 @@ public:
     
     SDL_PushEvent(&event);
   }
-  
-  void invalidate() override {
-    
-  }
 };
 
 DispatchQueue *createDispatchQueue(const char *name) {
