@@ -11,4 +11,6 @@ target_sources(ext_sdl
   PRIVATE
     SDLApplication.h
     SDLRuntime.cpp
+    SDLView.h
+    SDLView.cpp
 )
