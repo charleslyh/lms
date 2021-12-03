@@ -4,3 +4,4 @@ include_directories(.)
 
 add_subdirectory(lms)
 add_subdirectory(extension/sdl)
+add_subdirectory(extension/ffmpeg)

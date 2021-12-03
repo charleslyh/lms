@@ -69,8 +69,8 @@ typedef struct {
 void init(InitParams params = {});
 void unInit();
 
+// TODO: 应该移往更高层语义的地方
 class DispatchQueue;
-
 DispatchQueue *mainQueue();
 
 typedef std::map<std::string, void*> Metadata;
@@ -80,7 +80,6 @@ class FrameAcceptor : virtual public Object {
 public:
   virtual void didReceiveFrame(Frame *frame) = 0;
 };
-
 
 class FrameSource : virtual public Object {
 public:
