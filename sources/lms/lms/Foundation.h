@@ -19,14 +19,13 @@ protected:
   // 声明为private，防止被直接调用
 private:
   void ref();
-  void unref(bool postphone);
+  void unref();
     
 private:
   std::atomic<int> refCount;
   
   // 赋予lms级别的几个资源管理方法以访问权限，以便调用者可以用下面几个更加便利的方法来进行引用计数管理
   template<class T> friend T retain(T);
-  template<class T> friend T autoRelease(T);
   friend void release(Object*);
 };
 
@@ -46,22 +45,9 @@ inline void release(Object* object) {
     return;
   }
   
-  object->unref(false);
+  object->unref();
   return object;
 }
-
-template<class T>
-T autoRelease(T object) {
-  if (object == nullptr) {
-    return;
-  }
-  
-  object->unref(true);
-  return object;
-}
-
-void drainAutoReleasePool();
-
 
 typedef struct {
 } InitParams;

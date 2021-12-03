@@ -123,48 +123,26 @@ public:
   }
 
 public:
-  std::list<Object *> autoReleasePool;
   SDL_mutex *arpMtx;
   DispatchQueue *mainQueue;
 };
 
 static Core *core = nullptr;
 
-void Object::unref(bool postphone) {
-  if (postphone) {
-    // 0: 当前unref(true)函数
-    // 1: lms::autoRelease函数
-    // 2: lms::autoRelease的调用者
-    MarkObject(this, ".", 2);
-    core->autoReleasePool.push_back(this);
+void Object::unref() {
+  int newCount = (refCount -= 1);
+  assert(newCount >= 0); // < 0 意味着ref、unref不匹配：unref过多
+
+  if (newCount <= 0) {
+    delete this;
   } else {
-    int newCount = (refCount -= 1);
-    assert(newCount >= 0); // < 0 意味着ref、unref不匹配：unref过多
-
-    if (newCount <= 0) {
-      delete this;
-    } else {
-      // 仅当还无法真正delete时，才有必要进行跟踪
-      // 0: 当前unref(false)函数
-      // 1: lms::release函数
-      // 2: lms::release的调用者
-      MarkObject(this, "U", 2);
-    }
+    // 仅当还无法真正delete时，才有必要进行跟踪
+    // 0: 当前unref(false)函数
+    // 1: lms::release函数
+    // 2: lms::release的调用者
+    MarkObject(this, "U", 2);
   }
 }
-
-void drainAutoReleasePool() {
-  if (core->autoReleasePool.empty()) {
-    return;
-  }
- 
-  for (auto obj : core->autoReleasePool) {
-    lms::release(obj);
-  }
-
-  core->autoReleasePool.clear();
-}
-
 
 void init(InitParams params) {
   auto mq = createDispatchQueue("lms_main");

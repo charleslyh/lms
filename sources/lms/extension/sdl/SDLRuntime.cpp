@@ -37,8 +37,6 @@ void SDLApplication::run(SDLAppDelegate *delegate) {
 
       lms::release(r);
     }
-
-    lms::drainAutoReleasePool();
   }
   
   delegate->willTerminateApplication();

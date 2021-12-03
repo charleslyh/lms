@@ -522,22 +522,26 @@ void Player::play() {
     auto stream = (AVStream *)meta.data;
 
     if (meta.mediaType == MediaTypeVideo) {
-      VideoRenderDriver *driver = autoRelease(new VideoRenderDriver(stream, vrender, timesync));
-      LMSLogVerbose("RenderDriver: %p, for Video", driver);
+      VideoRenderDriver *driver = new VideoRenderDriver(stream, vrender, timesync);
+      Decoder *decoder = createDecoder(meta);
+
       driver->setDelegate(coordinator);
-
-      Decoder *decoder = autoRelease(createDecoder(meta));
-
       vstream = new Stream(meta, source, decoder, nullptr, driver);
+
+      lms::release(driver);
+      lms::release(decoder);
     } else if (meta.mediaType == MediaTypeAudio) {
-      SDLSpeaker *speaker = autoRelease(new SDLSpeaker(stream, timesync));
-      LMSLogVerbose("RenderDriver: %p, for Audio", speaker);
+      SDLSpeaker *speaker = new SDLSpeaker(stream, timesync);
       speaker->setDelegate(coordinator);
 
-      Decoder *decoder = autoRelease(createDecoder(meta));
+      Decoder *decoder = createDecoder(meta);
 
-      SDLAudioResampler *resampler = autoRelease(new SDLAudioResampler(stream));
+      SDLAudioResampler *resampler = new SDLAudioResampler(stream);
       astream = new Stream(meta, source, decoder, resampler, speaker);
+      
+      lms::release(resampler);
+      lms::release(decoder);
+      lms::release(speaker);
     }
   }
   
