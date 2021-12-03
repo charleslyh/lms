@@ -10,7 +10,7 @@ target_include_directories(demo
 )
 
 target_link_libraries(demo
-    PRIVATE
+  PRIVATE
     ${FFMPEG_LIBRARIES}
     ${SDL2_LIBRARY}
     lms
