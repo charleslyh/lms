@@ -39,7 +39,3 @@ target_sources(lms
   PRIVATE
     Stacktrace.h
 )
-
-# 具体link哪些(TODO: 考虑……这些link是不是放在demo target里更合适？)
-target_link_libraries(lms ext_sdl)
-target_link_libraries(lms ext_ffmpeg)
