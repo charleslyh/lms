@@ -14,8 +14,6 @@ target_link_libraries(demo
     ${FFMPEG_LIBRARIES}
     ${SDL2_LIBRARY}
     lms
-    ext_sdl
-    ext_ffmpeg
 )
 
 target_sources(demo
