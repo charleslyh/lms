@@ -5,17 +5,17 @@
 //  Created by yuhuachli on 2021/11/29.
 //
 
-#include "Runtime-.h"
+#include "Runtime.h"
 
 namespace lms {
 
-void dispatchAsync(DispatchQueue *queue, Runnable *runnable) {
-  queue->async(runnable);
+void dispatch(DispatchQueue *queue, void *sender, Runnable *runnable) {
+  queue->enqueue(sender, runnable);
 }
 
-void dispatchAsync(DispatchQueue *queue, std::function<void()> action) {
+void dispatch(DispatchQueue *queue, void *sender, std::function<void()> action) {
   auto r = new LambdaRunnable(action);
-  queue->async(r);
+  queue->enqueue(sender, r);
   lms::release(r);
 }
 

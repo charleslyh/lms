@@ -21,5 +21,4 @@ public:
 private:
   char *path;
   AVFormatContext *context;
-  lms::DispatchQueue *queue;
 };

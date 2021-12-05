@@ -147,6 +147,7 @@ void SDLView::start(const lms::StreamMeta& meta) {
 }
 
 void SDLView::stop() {
+  lms::mainQueue()->cancel(this);
   lms::release(scaler);
   
   SDL_DestroyTexture(texture);
@@ -174,7 +175,7 @@ void SDLView::didReceiveFrame(lms::Frame *frm) {
   LMSLogVerbose("Render video frame | ts:%.2lf, pts:%lld", ts, frame->pts);
   
   // 渲染、UI相关的处理只能在主线程调度
-  lms::dispatchAsync(lms::mainQueue(), [this, frame] () {
+  lms::dispatch(lms::mainQueue(), this, [this, frame] () {
     Uint32 t0 = SDL_GetTicks();
 
     AVFrame *yuv = scaler ? scaler->scale(frame) : frame;
@@ -201,6 +202,6 @@ void SDLView::didReceiveFrame(lms::Frame *frm) {
 
     av_frame_unref(frame);
 
-    LMSLogInfo("Render cost: total=%2u, texture=%2u, present=%2u", t2 - t0, t1 - t0, t2 - t1);
+    LMSLogDebug("Render cost: total=%2u, texture=%2u, present=%2u", t2 - t0, t1 - t0, t2 - t1);
   });
 }

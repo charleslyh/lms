@@ -1,6 +1,6 @@
 #include "FFVideoFile.h"
 #include <lms/Logger.h>
-#include <lms/Runtime-.h>
+#include <lms/Runtime.h>
 
 
 FFVideoFile::FFVideoFile(const char *path) {
@@ -8,13 +8,11 @@ FFVideoFile::FFVideoFile(const char *path) {
 
   this->context = nullptr;
   this->path = strdup(path);
-  this->queue = lms::createDispatchQueue("Video File");
 }
 
 FFVideoFile::~FFVideoFile() {
   assert(context == nullptr);
 
-  lms::release(this->queue);
   free(this->path);
 }
 
@@ -53,6 +51,8 @@ int FFVideoFile::open() {
 }
 
 void FFVideoFile::close() {
+  lms::mainQueue()->cancel(this);
+
   avformat_close_input(&context);
 }
 
@@ -71,7 +71,7 @@ void FFVideoFile::loadPackets(int numberRequested) {
   };
   
   // TODO: 使用独立的queue来加载数据
-  dispatchAsync(lms::mainQueue(), [this, numberRequested] {
+  dispatch(lms::mainQueue(), this, [this, numberRequested] {
     for (int i = 0; i< numberRequested; i += 1) {
       AVPacket *avpkt = av_packet_alloc();
       int rt = av_read_frame(context, avpkt);

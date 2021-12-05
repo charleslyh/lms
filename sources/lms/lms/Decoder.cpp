@@ -46,7 +46,7 @@ private:
 };
 
 void FFMDecoder::start() {
-  LMSLogInfo("startDecoder: %p", this);
+  LMSLogInfo("decoder=%p", this);
 
   int rt = avcodec_open2(codecContext, codec, 0);
   if (rt != 0) {
@@ -56,7 +56,7 @@ void FFMDecoder::start() {
 }
 
 void FFMDecoder::stop() {
-  LMSLogInfo("stopDecoder: %p", this);
+  LMSLogInfo("decoder=%p", this);
 
   // TODO: 完整的流程应该是
   // TODO: 1. 置状态为stopping
@@ -64,6 +64,7 @@ void FFMDecoder::stop() {
   // TODO: 3. drain queue中所有的解码 blocks，且解码block应该正确判断状态，仅当running的时候才可以解码
   // TODO: 4. 置状态未stopped
   // TODO: 5. 释放其它资源
+  lms::mainQueue()->cancel(this);
 
   avcodec_close(codecContext);
 }
@@ -86,7 +87,7 @@ void FFMDecoder::didReceivePacket(Packet *pkt) {
   std::shared_ptr<Packet> pktHolder(pkt, [] (Packet *pkt) { lms::release(pkt); });
   
   // TODO: 使用独立的queue来进行解码
-  dispatchAsync(mainQueue(), [this, pkt, pktHolder]() {
+  dispatch(mainQueue(), this, [this, pkt, pktHolder]() {
     notifyDecoderEvent(pkt, 0);
        
     AVPacket avpkt = {0};
