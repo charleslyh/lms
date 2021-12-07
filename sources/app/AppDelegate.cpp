@@ -1,7 +1,7 @@
 #include <lms/LMS.h>
-#include <extension/sdl/SDLApplication.h>
-#include <extension/sdl/SDLView.h>
-#include <extension/ffmpeg/FFVideoFile.h>
+#include <extension/RuntimeSDL/SDLApplication.h>
+#include <extension/RuntimeSDL/SDLView.h>
+#include <extension/SourceFFM/FFVideoFile.h>
 
 class PlayerAppDelegate: public SDLAppDelegate {
 public:  

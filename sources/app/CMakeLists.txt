@@ -14,8 +14,8 @@ target_link_libraries(demo
     ${FFMPEG_LIBRARIES}
     ${SDL2_LIBRARY}
     lms
-    runtime_sdl
-    filesrc_ffm
+    RuntimeSDL
+    SourceFFM
 )
 
 target_sources(demo

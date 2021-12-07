@@ -9,7 +9,7 @@ target_include_directories(lms
 
 target_link_libraries(lms
   PRIVATE
-    plugin_logger_console
+    LoggerConsole
 )
 
 # lms对业务侧可暴露的头文件列表
