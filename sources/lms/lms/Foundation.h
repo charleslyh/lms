@@ -6,7 +6,7 @@
 #include <list>
 
 #ifndef LMS_LEAKS_TRACING // 可能在外部构建命令中通过 -DLMS_LEAKS_TRACING=？指定，从而避免代码修改
-#  define LMS_LEAKS_TRACING 1
+#  define LMS_LEAKS_TRACING 0
 #endif
 
 namespace lms {
@@ -48,16 +48,6 @@ inline void release(Object* object) {
   object->unref();
   return object;
 }
-
-typedef struct {
-} InitParams;
-
-void init(InitParams params = {});
-void unInit();
-
-// TODO: 应该移往更高层语义的地方
-class DispatchQueue;
-DispatchQueue *mainQueue();
 
 typedef std::map<std::string, void*> Metadata;
 typedef void Frame;

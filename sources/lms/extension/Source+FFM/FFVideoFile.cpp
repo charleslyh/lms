@@ -32,6 +32,8 @@ lms::StreamMeta FFVideoFile::streamMetaAt(int index) {
 }
 
 int FFVideoFile::open() {
+  LMSLogDebug("source=%p", this);
+  
   int rt = 0;
 
   rt = avformat_open_input(&context, path, nullptr, nullptr);
@@ -51,6 +53,8 @@ int FFVideoFile::open() {
 }
 
 void FFVideoFile::close() {
+  LMSLogDebug("source=%p", this);
+
   lms::mainQueue()->cancel(this);
 
   avformat_close_input(&context);
@@ -71,7 +75,7 @@ void FFVideoFile::loadPackets(int numberRequested) {
   };
   
   // TODO: 使用独立的queue来加载数据
-  dispatch(lms::mainQueue(), this, [this, numberRequested] {
+  async(lms::mainQueue(), this, [this, numberRequested] {
     for (int i = 0; i< numberRequested; i += 1) {
       AVPacket *avpkt = av_packet_alloc();
       int rt = av_read_frame(context, avpkt);
@@ -96,6 +100,8 @@ void FFVideoFile::loadPackets(int numberRequested) {
 
         lms::release(pkt);
         lms::release(holder);
+      } else {
+        av_packet_free(&avpkt);
       }
     }
   });

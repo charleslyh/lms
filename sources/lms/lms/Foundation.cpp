@@ -110,25 +110,6 @@ void Object::ref() {
   MarkObject(this, "R", 2);
 }
 
-class Core {
-public:
-  explicit Core(DispatchQueue *mainQueue) {
-    this->arpMtx    = SDL_CreateMutex();
-    this->mainQueue = retain(mainQueue);
-  }
-
-  ~Core() {
-    release(this->mainQueue);
-    SDL_DestroyMutex(arpMtx);
-  }
-
-public:
-  SDL_mutex *arpMtx;
-  DispatchQueue *mainQueue;
-};
-
-static Core *core = nullptr;
-
 void Object::unref() {
   int newCount = (refCount -= 1);
   assert(newCount >= 0); // < 0 意味着ref、unref不匹配：unref过多
@@ -142,21 +123,6 @@ void Object::unref() {
     // 2: lms::release的调用者
     MarkObject(this, "U", 2);
   }
-}
-
-void init(InitParams params) {
-  auto mq = createDispatchQueue("lms_main");
-  core = new Core(mq);
-  release(mq);
-}
-
-void unInit() {
-  delete core;
-  core = nullptr;
-}
-
-DispatchQueue *mainQueue() {
-  return core ? core->mainQueue : nullptr;
 }
 
 }

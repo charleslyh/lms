@@ -1,45 +1,14 @@
 #include "Logger.h"
-extern "C" {
-  #include <SDL2/SDL.h>
-}
+#include "Module.h"
 #include <sys/time.h>
+#include <thread>
+#include <sstream>
 
 namespace lms {
 
 const int MaxBufferSize = 8192;
 
-class LogWriterConsole : public LogWriter {
-public:
-  LogWriterConsole() {
-    mtx = SDL_CreateMutex();
-  }
-  
-  ~LogWriterConsole() {
-    SDL_DestroyMutex(mtx);
-  }
-  
-  void write(const char *log) override {
-    SDL_LockMutex(mtx);
-    printf("%s", log);
-    SDL_UnlockMutex(mtx);
-  }
-
-private:
-  // printf是非线程安全的，所以需要手工使用一个互斥量来解决串行输出的问题。否则，会导致内容交错，如假设有aaaa,bbbb两行日志
-  // 正确输出应该是
-  //   aaaa
-  //   bbbb
-  // 可能的输出
-  //   aabbbb
-  //   aa
-  SDL_mutex *mtx;
-};
-
-LogWriter *getLogWriter() {
-  static LogWriterConsole consoleLogger;
-  return &consoleLogger;
-}
-
+static LogWriter *_logWriter;
 static LogLevel _logLevel = LogLevelInfo;
 
 void setLogLevel(LogLevel logLevel) {
@@ -48,7 +17,7 @@ void setLogLevel(LogLevel logLevel) {
 
 static
 void writeLogVargs(const char *fn, int ln, const char *func, LogLevel lv, const char *fmt, va_list vargs) {
-  constexpr char levelTags[] = {
+  static constexpr char levelTags[] = {
     [LogLevelVerbose]  = 'V',
     [LogLevelDebug]    = 'D',
     [LogLevelInfo]     = 'I',
@@ -73,8 +42,11 @@ void writeLogVargs(const char *fn, int ln, const char *func, LogLevel lv, const 
   wptr += len;
   remainBufferSz -= len;
 
-  SDL_threadID threadId = SDL_ThreadID();
-  len = snprintf(wptr, remainBufferSz, ".%03u %c/[%lx]/%s:%d/%s", tv.tv_usec / 1000, chLevel, threadId, fn, ln, func);
+  std::thread::id this_id = std::this_thread::get_id();
+  std::stringstream ss;
+  ss << std::this_thread::get_id();
+  
+  len = snprintf(wptr, remainBufferSz, ".%03u %c/[%s]/%s:%d/%s", tv.tv_usec / 1000, chLevel, ss.str().c_str(), fn, ln, func);
   wptr += len;
   remainBufferSz -= len;
   
@@ -90,7 +62,7 @@ void writeLogVargs(const char *fn, int ln, const char *func, LogLevel lv, const 
 
   snprintf(wptr, remainBufferSz, "\n");
 
-  getLogWriter()->write(buffer);
+  _logWriter->write(buffer);
 }
 
 void writeLog(const char *fname, int line, const char *func, LogLevel level, const char *fmt, ...) {
@@ -103,5 +75,23 @@ void writeLog(const char *fname, int line, const char *func, LogLevel level, con
   writeLogVargs(fname, line, func, level, fmt, vargs);
   va_end(vargs);
 }
+
+// 插件需要实现的符号
+extern LogWriter* createLogWriter();
+
+static void setupLoggerConsole() {
+  _logWriter = createLogWriter();
+}
+
+static void teardownLoggerConsole() {
+  delete _logWriter;
+  _logWriter = nullptr;
+}
+
+Module moduleLogger = {
+  .name     = "Logger",
+  .setup    = setupLoggerConsole,
+  .teardown = teardownLoggerConsole
+};
 
 } // namespace lms

@@ -87,7 +87,7 @@ void FFMDecoder::didReceivePacket(Packet *pkt) {
   std::shared_ptr<Packet> pktHolder(pkt, [] (Packet *pkt) { lms::release(pkt); });
   
   // TODO: 使用独立的queue来进行解码
-  dispatch(mainQueue(), this, [this, pkt, pktHolder]() {
+  async(mainQueue(), this, [this, pkt, pktHolder]() {
     notifyDecoderEvent(pkt, 0);
        
     AVPacket avpkt = {0};

@@ -1,13 +1,14 @@
 cmake_minimum_required(VERSION 3.13)
 
-add_library(ext_sdl STATIC)
+add_library(RuntimeSDL STATIC)
+set_property(TARGET RuntimeSDL PROPERTY FOLDER "extensions")
 
-target_include_directories(ext_sdl
+target_include_directories(RuntimeSDL
   PRIVATE
     ${SDL2_INCLUDE_DIR}
 )
 
-target_sources(ext_sdl
+target_sources(RuntimeSDL
   PRIVATE
     SDLApplication.h
     SDLRuntime.cpp

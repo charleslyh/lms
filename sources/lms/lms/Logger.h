@@ -32,6 +32,7 @@ typedef enum {
  */
 class LogWriter {
 public:
+  virtual ~LogWriter() {}
   virtual void write(const char *log) = 0;
 };
 

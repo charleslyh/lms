@@ -42,8 +42,8 @@ public:
   }
   
 private:
-  double   timePivot;
-  uint64_t tickPivot;
+  std::atomic<double>   timePivot;
+  std::atomic<uint64_t> tickPivot;
 };
 
 class RenderDriver;
@@ -296,7 +296,7 @@ private:
   AVStream *stream;
   TimeSync *timeSync;
   FramesBuffer<AudioFrameItem *> *frameItems;
-  uint32_t totalSamples;
+  std::atomic<uint32_t> totalSamples;
 };
 
 class VideoRenderDriver : public RenderDriver {
@@ -464,6 +464,7 @@ class Coordinator : public RenderDriverDelegate {
 public:
   Coordinator(PassiveMediaSource *source) {
     this->source = lms::retain(source);
+    this->isRunning = false;
   }
   
   ~Coordinator() {
@@ -471,12 +472,22 @@ public:
   }
 
 public:
-  void preload() {
+  void start() {
+    isRunning = true;
+
     this->source->loadPackets(10);
+  }
+  
+  void stop() {
+    isRunning = false;
   }
  
   void didRunRenderLoop(RenderDriver* driver) override {
-    LMSLogVerbose("RenderDriver: %p, cachedPlayingTime: %.2lf", driver, driver->cachedPlayingTime());
+    LMSLogVerbose("isRunning: %d, RenderDriver: %p, cachedPlayingTime: %.2lf", isRunning.load(), driver, driver->cachedPlayingTime());
+    
+    if (!isRunning) {
+      return;
+    }
     
     if (driver->cachedPlayingTime() < 1.0) {
       this->source->loadPackets(5);
@@ -485,6 +496,7 @@ public:
   
 private:
   PassiveMediaSource *source;
+  std::atomic<bool> isRunning;
 };
 
 
@@ -558,12 +570,13 @@ void Player::play() {
   
   if (vstream) vstream->start();
   if (astream) astream->start();
-
-  coordinator->preload();
+  coordinator->start();
 }
 
 void Player::stop() {
   LMSLogInfo(nullptr);
+  
+  coordinator->stop();
     
   source->close();
 

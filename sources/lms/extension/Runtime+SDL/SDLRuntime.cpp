@@ -47,7 +47,7 @@ public:
   double         interval;
   lms::Runnable *runnable;
   SDL_Thread    *thread;
-  bool           shouldQuit;
+  std::atomic<bool> shouldQuit;
 
   SDLTimer(const char *name, double interval, lms::Runnable *r) {
     this->name       = strdup(name);
@@ -132,13 +132,19 @@ public:
   
   ~SDLMainQueue() {
     if (!items.empty()) {
-      LMSLogError("Sould contains no runnable!");
+      LMSLogError("Should contains no runnable!");
+      
+      for (auto i : items) {
+        LMSLogWarning("Exceptional runnable: sender=%p, runnable=%p", i.first, i.second);
+      }
     }
     
     SDL_DestroyMutex(mtx);
   }
   
   void enqueue(void *sender, lms::Runnable *runnable) override {
+    LMSLogDebug("sender=%p, runnable=%p", sender, runnable);
+    
     lms::retain(runnable);
 
     SDL_LockMutex(mtx);
@@ -159,7 +165,9 @@ public:
       if (!items.empty()) {
         auto item = items.front();
         items.pop_front();
-        
+
+        LMSLogDebug("sender=%p, runnable=%p", item.first, item.second);
+
         item.second->run();
         lms::release(item.second);
       }
@@ -168,11 +176,15 @@ public:
   }
   
   void cancel(void *sender) override {
+    LMSLogDebug("sender=%p", sender);
+    
     SDL_LockMutex(mtx);
     {
       items.remove_if([this, sender] (const std::pair<void *, lms::Runnable *>& item) {
         if (sender == nullptr || item.first == sender) {
           lms::release(item.second);
+          
+          LMSLogDebug("Canceled runnable: sender=%p, runnable=%p", item.first, item.second);
           return true;
         } else {
           return false;

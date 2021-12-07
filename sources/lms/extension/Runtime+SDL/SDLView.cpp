@@ -110,6 +110,8 @@ private:
 };
 
 void SDLView::start(const lms::StreamMeta& meta) {
+  LMSLogDebug("SDLView=%p", this);
+  
   this->st = (AVStream *)meta.data;
   auto par = st->codecpar;
   
@@ -147,6 +149,8 @@ void SDLView::start(const lms::StreamMeta& meta) {
 }
 
 void SDLView::stop() {
+  LMSLogDebug("SDLView=%p", this);
+
   lms::mainQueue()->cancel(this);
   lms::release(scaler);
   
@@ -175,7 +179,7 @@ void SDLView::didReceiveFrame(lms::Frame *frm) {
   LMSLogVerbose("Render video frame | ts:%.2lf, pts:%lld", ts, frame->pts);
   
   // 渲染、UI相关的处理只能在主线程调度
-  lms::dispatch(lms::mainQueue(), this, [this, frame] () {
+  lms::async(lms::mainQueue(), this, [this, frame] () {
     Uint32 t0 = SDL_GetTicks();
 
     AVFrame *yuv = scaler ? scaler->scale(frame) : frame;

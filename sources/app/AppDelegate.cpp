@@ -1,6 +1,4 @@
-#include <lms/Player.h>
-#include <lms/MediaSource.h>
-#include <lms/Logger.h>
+#include <lms/LMS.h>
 #include <extension/sdl/SDLApplication.h>
 #include <extension/sdl/SDLView.h>
 #include <extension/ffmpeg/FFVideoFile.h>
@@ -12,7 +10,7 @@ public:
     lms::init();
     
     // 设置日志过滤等级，一般默认为Info，但在调试场景下，可以使用Verbose来获取更完备的信息
-    lms::setLogLevel(lms::LogLevelVerbose);
+    lms::setLogLevel(lms::LogLevelInfo);
 
     auto src = new FFVideoFile(argv[1]);
     auto view = new SDLView;
@@ -39,6 +37,4 @@ int main(int argc, char *argv[]) {
   
   PlayerAppDelegate delegate;
   app.run(&delegate);
-  
-  lms::dumpLeaks();
 }

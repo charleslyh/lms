@@ -61,20 +61,11 @@ public:
   virtual void scheduleOnce() = 0;
 };
 
-/*
- @function createDispatchQueue
- 创建一个DispatchQueue实例
- 
- @param name 队列名称，如果队列会创建一个新线程，则该线程会使用该名称作为线程名
- 
- @result
- TODO: ...
- */
-DispatchQueue *createDispatchQueue(const char *name);
+DispatchQueue *mainQueue();
 
 // TODO: 既然业务能拿到DispatchQueue实例，为什么还需要下面两个方法？swift中的API是怎样的？
-void dispatch(DispatchQueue *queue, void *sender, Runnable *runnable);
-void dispatch(DispatchQueue *queue, void *sender, std::function<void()> action);
+void async(DispatchQueue *queue, void *sender, Runnable *runnable);
+void async(DispatchQueue *queue, void *sender, std::function<void()> action);
 
 class Timer : virtual public Object {};
 
