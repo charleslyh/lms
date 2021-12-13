@@ -5,6 +5,7 @@
 #include "Buffer.h"
 #include "Logger.h"
 #include "Runtime.h"
+#include "StreamBuilder.h"
 extern "C" {
   #include <libavcodec/avcodec.h>
   #include "libavutil/avutil.h"
@@ -531,6 +532,10 @@ void Player::play() {
   int  streamId = -1;
   for (int i = 0; i < nbStreams; i += 1) {
     auto meta   = source->streamMetaAt(i);
+    
+    auto streamContext = meta.dict;
+    
+    
     auto stream = (AVStream *)meta.data;
 
     if (meta.mediaType == MediaTypeVideo) {

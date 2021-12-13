@@ -38,6 +38,9 @@ list(APPEND implement_files
   Packet.h
   Packet.cpp
   
+  StreamBuilder.h
+  StreamBuilder.cpp
+  
   LMS.cpp
   Foundation.cpp
   Logger.cpp
