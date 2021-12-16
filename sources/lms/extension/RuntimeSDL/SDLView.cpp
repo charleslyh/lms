@@ -109,10 +109,13 @@ private:
   AVFrame *cacheFrame;
 };
 
-void SDLView::start(const lms::StreamMeta& meta) {
+void SDLView::configure(const lms::StreamMetaInfo &meta) {
+  this->st = (AVStream *)(meta.at("stream_object").value.ptr);
+}
+
+void SDLView::start() {
   LMSLogDebug("SDLView=%p", this);
   
-  this->st = (AVStream *)meta.data;
   auto par = st->codecpar;
   
   // 创建一个SDL窗口用于在其中进行视频渲染

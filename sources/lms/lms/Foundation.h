@@ -72,10 +72,11 @@ struct Variant : virtual public Object {
     int64_t       i;
     const char   *cstr;
     void         *ptr;
-    class Object *obj;
+    Object       *obj;
   } value;
   
-  typedef void (*PFNReleaser)(Value& v);
+  typedef Value (*PFNRetain)(const Value& from);
+  typedef void (*PFNRelease)(Value& v);
 
   Variant(bool val) {
     construct(Bool);
@@ -99,7 +100,7 @@ struct Variant : virtual public Object {
   
   Variant(const char *val, bool copy = true) {
     if (copy) {
-      construct(CString, releaseCString);
+      construct(CString, copyCString, releaseCString);
       value.cstr = strdup(val);
     } else {
       construct(CString);
@@ -107,14 +108,48 @@ struct Variant : virtual public Object {
     }
   }
   
-  Variant(void *ptr, PFNReleaser releaser = nullptr) {
-    construct(OpaquePointer, releaser);
-    value.ptr = ptr;
+  Variant(void *ptr, PFNRetain retainer = nullptr, PFNRelease releaser = nullptr) {
+    construct(OpaquePointer, retainer, releaser);
+    
+    if (retainer) {
+      Value tmp;
+      tmp.ptr = ptr;
+      value = retainer(tmp);
+    } else {
+      value.ptr = ptr;
+    }
   }
   
   Variant(Object *obj) {
-    construct(LMSObject, releaseObject);
+    construct(LMSObject, retainObject, releaseObject);
+    
+    retain(obj);
     value.obj = obj;
+  }
+  
+  Variant(const Variant& origin) {
+    construct(origin.type, origin.retainer, origin.releaser);
+    
+    if (origin.retainer) {
+      value = origin.retainer(origin.value);
+    } else {
+      this->value = origin.value;
+    }
+  }
+  
+  Variant& operator=(const Variant& rhs) {
+    // TODO: assert(rhs.type == this->type);
+    if (releaser) {
+      releaser(value);
+    }
+           
+    construct(type, rhs.retainer, rhs.releaser);
+
+    if (rhs.retainer) {
+      value = rhs.retainer(rhs.value);
+    }
+    
+    return *this;
   }
   
   ~Variant() {
@@ -124,23 +159,37 @@ struct Variant : virtual public Object {
   }
   
 private:
+  static Value copyCString(const Value& from) {
+    Value v;
+    v.cstr = strdup(from.cstr);
+    return v;
+  }
+  
   static void releaseCString(Value& v) {
     free((char *)v.cstr);
+  }
+  
+  static Value retainObject(const Value& from) {
+    Value v;
+    v.obj = lms::retain(from.obj);
+    return v;
   }
   
   static void releaseObject(Value& v) {
     lms::release(v.obj);
   }
   
-  void construct(Type type, PFNReleaser releaser = nullptr) {
+  void construct(Type type, PFNRetain retainer = nullptr, PFNRelease releaser = nullptr) {
     this->type     = type;
+    this->retainer = retainer;
     this->releaser = releaser;
   }
   
-  PFNReleaser releaser;
+  PFNRetain  retainer;
+  PFNRelease releaser;
 };
 
-typedef std::map<std::string, Variant *> StreamMetaInfo;
+typedef std::map<std::string, Variant> StreamMetaInfo;
 
 class FrameAcceptor : virtual public Object {
 public:

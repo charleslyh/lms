@@ -1,6 +1,6 @@
 #pragma once
 
-#include <lms/Render.h>
+#include <lms/Cell.h>
 extern "C" {
 #include <SDL2/SDL.h>
 #include <libavformat/avformat.h>
@@ -8,7 +8,7 @@ extern "C" {
 
 class SWSFrameScaler;
 
-class SDLView : public lms::Render {
+class SDLView : public lms::Cell {
 public:
   typedef enum {
     aspectFit   = 1,
@@ -20,11 +20,12 @@ public:
   void setContentMode(ContentMode contentMode);
 
 protected:
-  void start(const lms::StreamMeta& meta) override;
+  void configure(const lms::StreamMetaInfo& meta) override;
+  void start() override;
   void stop() override;
   
 protected:
-  void didReceiveFrame(lms::Frame *frm) override;
+  void didReceiveCellMessage(const lms::CellMessage& cmsg) override;
   
 private:
   AVStream *st;
