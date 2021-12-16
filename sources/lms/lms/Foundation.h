@@ -52,6 +52,96 @@ inline void release(Object* object) {
 typedef std::map<std::string, void*> Metadata;
 typedef void Frame;
 
+struct Variant : virtual public Object {
+  typedef enum {
+    Bool          = 'b',
+    Char          = 'c',
+    Int           = 'i',
+    UInt          = 'u',
+    CString       = 's',
+    OpaquePointer = '*',
+    LMSObject     = 'o',
+  } Type;
+  
+  Type type;
+
+  union Value {
+    bool          b;
+    char          c;
+    uint64_t      u;
+    int64_t       i;
+    const char   *cstr;
+    void         *ptr;
+    class Object *obj;
+  } value;
+  
+  typedef void (*PFNReleaser)(Value& v);
+
+  Variant(bool val) {
+    construct(Bool);
+    value.b = val;
+  }
+  
+  Variant(char val) {
+    construct(Char);
+    value.c = val;
+  }
+  
+  Variant(int64_t val) {
+    construct(Int);
+    value.i = val;
+  }
+  
+  Variant(uint64_t val) {
+    construct(UInt);
+    value.u = val;
+  }
+  
+  Variant(const char *val, bool copy = true) {
+    if (copy) {
+      construct(CString, releaseCString);
+      value.cstr = strdup(val);
+    } else {
+      construct(CString);
+      value.cstr = val;
+    }
+  }
+  
+  Variant(void *ptr, PFNReleaser releaser = nullptr) {
+    construct(OpaquePointer, releaser);
+    value.ptr = ptr;
+  }
+  
+  Variant(Object *obj) {
+    construct(LMSObject, releaseObject);
+    value.obj = obj;
+  }
+  
+  ~Variant() {
+    if (releaser != nullptr) {
+      releaser(value);
+    }
+  }
+  
+private:
+  static void releaseCString(Value& v) {
+    free((char *)v.cstr);
+  }
+  
+  static void releaseObject(Value& v) {
+    lms::release(v.obj);
+  }
+  
+  void construct(Type type, PFNReleaser releaser = nullptr) {
+    this->type     = type;
+    this->releaser = releaser;
+  }
+  
+  PFNReleaser releaser;
+};
+
+typedef std::map<std::string, Variant *> StreamMetaInfo;
+
 class FrameAcceptor : virtual public Object {
 public:
   virtual void didReceiveFrame(Frame *frame) = 0;

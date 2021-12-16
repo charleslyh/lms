@@ -25,6 +25,9 @@ list(APPEND interface_headers
 # lms内部实现文件列表
 list(APPEND implement_files
   Module.h
+  
+  Cell.h
+  Cell.cpp
 
   Buffer.h
   Buffer.cpp
