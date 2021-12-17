@@ -1,4 +1,5 @@
 #include "FFVideoFile.h"
+#include <lms/MediaSource.h>
 #include <lms/Logger.h>
 #include <lms/Runtime.h>
 
@@ -29,6 +30,20 @@ lms::StreamMeta FFVideoFile::streamMetaAt(int index) {
     (lms::MediaType)st->codecpar->codec_type,
     av_q2d(st->avg_frame_rate),
   };
+}
+
+lms::StreamMetaInfo FFVideoFile::getStreamMeta(size_t streamIndex) {
+  lms::StreamMetaInfo smi;
+  
+  if (streamIndex < context->nb_streams) {
+    AVStream *stream = context->streams[streamIndex];
+    smi["source_type"]       = "avformat";
+    smi["stream_media_type"] = (uint64_t)stream->codecpar->codec_type;
+    smi["stream_class"]      = "AVStream";
+    smi["stream_object"]     = stream;
+  }
+  
+  return smi;
 }
 
 int FFVideoFile::open() {

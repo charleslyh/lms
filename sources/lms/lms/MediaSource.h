@@ -43,6 +43,8 @@ public:
   virtual void close() = 0;
   virtual int numberOfStreams() = 0;
   virtual StreamMeta streamMetaAt(int streamIndex) = 0;
+  
+  virtual StreamMetaInfo getStreamMeta(size_t streamIndex) = 0;
 
 public:
   void addPacketAcceptor(StreamId streamId, PacketAcceptor *acceptor);

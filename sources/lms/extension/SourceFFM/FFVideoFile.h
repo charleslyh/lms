@@ -12,6 +12,7 @@ public:
 
   int numberOfStreams() override;
   lms::StreamMeta streamMetaAt(int index) override;
+  lms::StreamMetaInfo getStreamMeta(size_t streamIndex) override;
 
   int open() override;
   void close() override;

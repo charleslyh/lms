@@ -5,6 +5,7 @@
 #include "Buffer.h"
 #include "Logger.h"
 #include "Runtime.h"
+#include "Cell.h"
 extern "C" {
   #include <libavcodec/avcodec.h>
   #include "libavutil/avutil.h"
@@ -301,7 +302,7 @@ private:
 
 class VideoRenderDriver : public RenderDriver {
 public:
-  VideoRenderDriver(AVStream *stream, Render *videoRender, TimeSync *timeSync) {
+  VideoRenderDriver(AVStream *stream, Cell *videoRender, TimeSync *timeSync) {
     this->stream   = stream;
     this->render   = lms::retain(videoRender);
     this->timeSync = lms::retain(timeSync);
@@ -315,7 +316,7 @@ public:
   }
   
   void start(const StreamMeta& meta) override {
-    render->start(meta);
+    render->start();
     
     double fps = av_q2d(stream->avg_frame_rate);
     double spf = 1.0 / fps; // second per frame, also timer interval
@@ -373,7 +374,9 @@ public:
       }
 
       if (render) {
-        render->didReceiveFrame(frame);
+        CellMessage msg;
+        msg["media-frame"] = Variant((void *)frame);
+        render->didReceiveCellMessage(msg);
         av_frame_unref(frame);
       }
 
@@ -401,7 +404,7 @@ public:
  
 private:
   AVStream *stream;
-  Render   *render;
+  Cell     *render;
   Timer    *fpsTimer;
   TimeSync *timeSync;
   FramesBuffer<AVFrame *> *buffer;
@@ -500,7 +503,7 @@ private:
 };
 
 
-Player::Player(PassiveMediaSource *s, Render *vrender) {
+Player::Player(PassiveMediaSource *s, Cell *vrender) {
   this->source      = lms::retain(s);
   this->vrender     = lms::retain(vrender);
   this->coordinator = new Coordinator(s);
@@ -531,6 +534,7 @@ void Player::play() {
   int  streamId = -1;
   for (int i = 0; i < nbStreams; i += 1) {
     auto meta   = source->streamMetaAt(i);
+    auto smi    = source->getStreamMeta(i);
     auto stream = (AVStream *)meta.data;
 
     if (meta.mediaType == MediaTypeVideo) {
@@ -539,6 +543,8 @@ void Player::play() {
 
       driver->setDelegate(coordinator);
       vstream = new Stream(meta, source, decoder, nullptr, driver);
+
+      vrender->configure(smi);
 
       lms::release(driver);
       lms::release(decoder);

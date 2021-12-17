@@ -52,8 +52,17 @@ inline void release(Object* object) {
 typedef std::map<std::string, void*> Metadata;
 typedef void Frame;
 
+struct VariantRef {
+  std::atomic<int> count;
+  
+  VariantRef() {
+    count = 1;
+  }
+};
+
 struct Variant : virtual public Object {
   typedef enum {
+    None          = 0,
     Bool          = 'b',
     Char          = 'c',
     Int           = 'i',
@@ -77,6 +86,11 @@ struct Variant : virtual public Object {
   
   typedef Value (*PFNRetain)(const Value& from);
   typedef void (*PFNRelease)(Value& v);
+  
+  Variant() {
+    construct(None);
+    value = {0};
+  }
 
   Variant(bool val) {
     construct(Bool);
@@ -128,7 +142,7 @@ struct Variant : virtual public Object {
   }
   
   Variant(const Variant& origin) {
-    construct(origin.type, origin.retainer, origin.releaser);
+    construct(origin.type, origin.retainer, origin.releaser, origin.ref);
     
     if (origin.retainer) {
       value = origin.retainer(origin.value);
@@ -139,22 +153,33 @@ struct Variant : virtual public Object {
   
   Variant& operator=(const Variant& rhs) {
     // TODO: assert(rhs.type == this->type);
-    if (releaser) {
-      releaser(value);
+    if (type != None && type != rhs.type) {
+      return *this;
     }
-           
-    construct(type, rhs.retainer, rhs.releaser);
+    
+    // 先释放自身持有的资源
+    int newCount =  ref->count - 1;
+    if (newCount <= 0 && releaser) {
+      releaser(value);
+      delete ref;
+    }
+
+    construct(type, rhs.retainer, rhs.releaser, rhs.ref);
 
     if (rhs.retainer) {
       value = rhs.retainer(rhs.value);
+    } else {
+      value = rhs.value;
     }
     
     return *this;
   }
   
   ~Variant() {
-    if (releaser != nullptr) {
+    int newCount = ref->count - 1;
+    if (newCount == 0 && releaser != nullptr) {
       releaser(value);
+      delete ref;
     }
   }
   
@@ -179,14 +204,22 @@ private:
     lms::release(v.obj);
   }
   
-  void construct(Type type, PFNRetain retainer = nullptr, PFNRelease releaser = nullptr) {
+  void construct(Type type, PFNRetain retainer = nullptr, PFNRelease releaser = nullptr, VariantRef *ref = nullptr) {
     this->type     = type;
     this->retainer = retainer;
     this->releaser = releaser;
+    
+    if (!ref) {
+      this->ref = new VariantRef;
+    } else {
+      this->ref = ref;
+      this->ref->count += 1;
+    }
   }
   
   PFNRetain  retainer;
   PFNRelease releaser;
+  VariantRef *ref;
 };
 
 typedef std::map<std::string, Variant> StreamMetaInfo;

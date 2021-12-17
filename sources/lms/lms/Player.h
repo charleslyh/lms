@@ -7,12 +7,12 @@ namespace lms {
 class PassiveMediaSource;
 class Stream;
 class Coordinator;
-class Render;
+class Cell;
 class TimeSync;
 
 class Player : virtual public Object {
 public:
-  Player(PassiveMediaSource *src, Render *videoRender);
+  Player(PassiveMediaSource *src, Cell *render);
   ~Player();
   
   void play();
@@ -22,7 +22,7 @@ private:
   PassiveMediaSource *source;
 
   Stream *vstream;
-  Render *vrender;
+  Cell   *vrender;
   Coordinator *coordinator;
 
   Stream *astream;

@@ -11,7 +11,7 @@
 
 namespace lms {
 
-typedef std::map<std::string, std::shared_ptr<Object>> CellMessage;
+typedef std::map<std::string, Variant> CellMessage;
 
 class Cell : virtual public Object {
 public:

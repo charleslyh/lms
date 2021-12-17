@@ -174,9 +174,10 @@ SDLView::ContentMode SDLView::getContentMode() const {
 void SDLView::setContentMode(SDLView::ContentMode contentMode) {
   this->contentMode = contentMode;
 }
- 
-void SDLView::didReceiveFrame(lms::Frame *frm) {
-  auto frame = av_frame_clone((AVFrame *)frm);
+
+void SDLView::didReceiveCellMessage(const lms::CellMessage &msg) {
+  AVFrame *inputFrame = (AVFrame *)msg.at("media-frame").value.ptr;
+  auto frame = av_frame_clone(inputFrame);
   
   double ts = frame->best_effort_timestamp * av_q2d(st->time_base);
   LMSLogVerbose("Render video frame | ts:%.2lf, pts:%lld", ts, frame->pts);
@@ -212,3 +213,4 @@ void SDLView::didReceiveFrame(lms::Frame *frm) {
     LMSLogDebug("Render cost: total=%2u, texture=%2u, present=%2u", t2 - t0, t1 - t0, t2 - t1);
   });
 }
+
