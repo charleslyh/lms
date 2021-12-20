@@ -1,23 +1,18 @@
 #include "MediaSource.h"
-#include "Packet.h"
 
 namespace lms {
 
-void MediaSource::addPacketAcceptor(int streamIndex, PacketAcceptor *acceptor) {
-  acceptors.push_back({streamIndex, acceptor});
+void MediaSource::addReceiver(Cell *receiver) {
+  receivers.push_back(receiver);
 }
 
-void MediaSource::removePacketAcceptor(PacketAcceptor *acceptor) {
-  acceptors.remove_if([acceptor] (std::pair<int, PacketAcceptor *> item) {
-    return acceptor == item.second;
-  });
+void MediaSource::removeReceiver(Cell *receiver) {
+  receivers.remove(receiver);
 }
 
-void MediaSource::deliverPacket(Packet *packet) {
-  for (auto item : acceptors) {
-    if (item.first == StreamIdAny || item.first == packet->streamIndex) {
-      item.second->didReceivePacket(packet);
-    }
+void MediaSource::deliverPacketMessage(const PipelineMessage& msg) {
+  for (auto r : receivers) {
+    r->didReceivePipelineMessage(msg);
   };
 }
 

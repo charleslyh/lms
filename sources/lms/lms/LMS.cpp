@@ -18,7 +18,7 @@ static Module mods[] = {
   moduleRuntime,
 };
 
-void init(InitParams params) {
+void init() {
   moduleLogger.setup();
   LMSLogInfo("Module setup: %s", moduleLogger.name);
   

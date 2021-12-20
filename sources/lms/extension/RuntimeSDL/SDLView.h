@@ -20,12 +20,12 @@ public:
   void setContentMode(ContentMode contentMode);
 
 protected:
-  void configure(const lms::StreamMetaInfo& meta) override;
+  void configure(const lms::StreamMeta& meta) override;
   void start() override;
   void stop() override;
   
 protected:
-  void didReceiveCellMessage(const lms::CellMessage& cmsg) override;
+  void didReceivePipelineMessage(const lms::PipelineMessage& cmsg) override;
   
 private:
   AVStream *st;

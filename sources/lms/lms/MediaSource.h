@@ -1,13 +1,8 @@
 #pragma once
 
 #include <lms/Foundation.h>
-#include <lms/Packet.h>
-extern "C" {
-  #include <libavformat/avformat.h>
-}
+#include <lms/Cell.h>
 #include <list>
-#include <string>
-
 
 namespace lms {
 
@@ -20,52 +15,25 @@ enum MediaType {
   MediaTypeAudio = 1,
 };
 
-struct StreamMeta {
-  std::string format;  // 例如 ffmpeg
-  void       *data;
-  StreamId    streamId;
-  MediaType   mediaType;
-  double      averageFPS;
-};
-
-class MediaSource;
-class Packet;
-
-class PacketAcceptor : virtual public Object {
-public:
-  virtual void didReceivePacket(Packet *pkt) = 0;
-};
-
-
-class MediaSource : virtual public Object {
+class MediaSource : public Object {
 public:
   virtual int open() = 0;
   virtual void close() = 0;
+
   virtual int numberOfStreams() = 0;
-  virtual StreamMeta streamMetaAt(int streamIndex) = 0;
-  
-  virtual StreamMetaInfo getStreamMeta(size_t streamIndex) = 0;
+  virtual StreamMeta getStreamMeta(size_t streamIndex) = 0;
+
+  virtual void loadPackets(int numberRequested) = 0;
 
 public:
-  void addPacketAcceptor(StreamId streamId, PacketAcceptor *acceptor);
-  void removePacketAcceptor(PacketAcceptor *acceptor);
+  void addReceiver(Cell *receiver);
+  void removeReceiver(Cell *receiver);
 
 protected:
-  void deliverPacket(Packet *packet);
+  void deliverPacketMessage(const PipelineMessage& msg);
 
 private:
-  std::list<std::pair<StreamId, PacketAcceptor *>> acceptors;
-};
-
-
-class PassiveMediaSource : public MediaSource {
-public:
-  virtual void loadPackets(int numberRequested) = 0;
-};
-
-class Demuxer : virtual public Object {
-public:
-  
+  std::list<Cell *> receivers;
 };
 
 }

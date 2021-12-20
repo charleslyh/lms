@@ -1,7 +1,6 @@
 #include "Player.h"
 #include "MediaSource.h"
 #include "Decoder.h"
-#include "Render.h"
 #include "Buffer.h"
 #include "Logger.h"
 #include "Runtime.h"
@@ -55,13 +54,13 @@ public:
   virtual void didRunRenderLoop(RenderDriver *driver) {}
 };
 
-class RenderDriver : public FrameAcceptor {
+class RenderDriver : public Cell {
 public:
   ~RenderDriver() {
     lms::release(this->delegate);
   }
   
-  virtual void start(const StreamMeta& meta) = 0;
+  virtual void start() = 0;
   virtual void stop() = 0;
   
   virtual double cachedPlayingTime() = 0;
@@ -75,10 +74,7 @@ protected:
   RenderDriverDelegate *delegate = nullptr;
 };
 
-class Resampler: public FrameAcceptor, public FrameSource {};
-
-
-class SDLAudioResampler: public Resampler {
+class SDLAudioResampler: public Cell {
   AVStream *stream;
   SwrContext *context;
   int out_channel_layout;
@@ -104,13 +100,12 @@ public:
     }
     
     int ret = 0;
-    ret = av_opt_set_int(context,        "in_channel_layout", in_channel_layout, 0);
-    ret = av_opt_set_int(context,        "in_sample_rate",    stream->codecpar->sample_rate, 0);
-    ret = av_opt_set_sample_fmt(context, "in_sample_fmt",     (enum AVSampleFormat)stream->codecpar->format, 0);
-
-    ret = av_opt_set_int(context, "out_channel_layout", out_channel_layout, 0);
-    ret = av_opt_set_int(context, "out_sample_rate",    out_sample_rate,    0);
-    ret = av_opt_set_int(context, "out_sample_fmt",     out_sample_format,  0);
+    setOption("in_channel_layout",  in_channel_layout);
+    setOption("in_sample_rate",     stream->codecpar->sample_rate);
+    setOption("in_sample_fmt",      stream->codecpar->format);
+    setOption("out_channel_layout", out_channel_layout);
+    setOption("out_sample_rate",    out_sample_rate);
+    setOption("out_sample_fmt",     out_sample_format);
 
     ret = swr_init(context);
   }
@@ -118,10 +113,17 @@ public:
   ~SDLAudioResampler() {
     swr_free(&this->context);
   }
+  
+  inline void setOption(const char *name, int value) {
+    av_opt_set_int(context, name, value, 0);
+  }
 
 public:
-  void didReceiveFrame(Frame *frame) override {
-    AVFrame *avfrm = (AVFrame *)frame;
+  void start() override {}
+  void stop() override {}
+  
+  void didReceivePipelineMessage(const PipelineMessage& msg) override {
+    auto avfrm = (AVFrame *)msg.at("frame").value.ptr;
     int out_linesize = 0;
     uint8_t **resampled_data = NULL;
     int resampled_data_size = 0;
@@ -176,7 +178,10 @@ public:
     frame_resampled->format = out_sample_format;
     frame_resampled->sample_rate = out_sample_rate;
 
-    deliverFrame((Frame *)frame_resampled);
+    PipelineMessage frmMsg;
+    frmMsg["type"]  = "media_frame";
+    frmMsg["frame"] = frame_resampled;
+    deliverPipelineMessage(frmMsg);
 
     av_freep(&resampled_data[0]);
     av_freep(&resampled_data);
@@ -222,8 +227,8 @@ public:
   }
   
 protected:
-  void didReceiveFrame(Frame *frame) override {
-    auto avfrm = (AVFrame *)frame;
+  void didReceivePipelineMessage(const PipelineMessage& msg) override {
+    auto avfrm = (AVFrame *)msg.at("frame").value.ptr;
     AudioFrameItem *afi = new AudioFrameItem { avfrm, avfrm->data[0], avfrm->linesize[0] };
     frameItems->pushBack(afi);
     
@@ -283,7 +288,7 @@ private:
   }
 
 private:
-  void start(const StreamMeta &meta) override {
+  void start() override {
     SDL_PauseAudioDevice(speakerId, 0);
   }
   
@@ -314,8 +319,8 @@ public:
     lms::release(timeSync);
     lms::release(buffer);
   }
-  
-  void start(const StreamMeta& meta) override {
+ 
+  void start() override {
     render->start();
     
     double fps = av_q2d(stream->avg_frame_rate);
@@ -374,9 +379,10 @@ public:
       }
 
       if (render) {
-        CellMessage msg;
-        msg["media-frame"] = Variant((void *)frame);
-        render->didReceiveCellMessage(msg);
+        PipelineMessage msg;
+        msg["type"]  = "media_frame";
+        msg["frame"] = frame;
+        render->didReceivePipelineMessage(msg);
         av_frame_unref(frame);
       }
 
@@ -398,8 +404,9 @@ public:
     return buffer->count() * spf;
   }
   
-  void didReceiveFrame(Frame *frame) override {
-    buffer->pushBack(av_frame_clone((AVFrame *)frame));
+  void didReceivePipelineMessage(const PipelineMessage& msg) override {
+    auto avfrm = (AVFrame *)msg.at("frame").value.ptr;
+    buffer->pushBack(av_frame_clone(avfrm));
   }
  
 private:
@@ -410,62 +417,61 @@ private:
   FramesBuffer<AVFrame *> *buffer;
 };
 
-class Stream : virtual public Object {
+class Stream : public Cell {
 public:
-  Stream(const StreamMeta& meta, PassiveMediaSource *source, Decoder *decoder, Resampler *resampler, RenderDriver *renderDriver) {
+  Stream(const StreamMeta &meta, Cell *decoder, Cell *resampler, RenderDriver *renderDriver) {
     this->meta         = meta;
-    this->source       = lms::retain(source);
     this->renderDriver = lms::retain(renderDriver);
     this->resampler    = lms::retain(resampler);
     this->decoder      = lms::retain(decoder);
   }
 
   ~Stream() {
-    lms::release(source);
     lms::release(resampler);
     lms::release(decoder);
     lms::release(renderDriver);
   }
   
-  void start() {
-    source->addPacketAcceptor(meta.streamId, decoder);
-    
+  void start() override {
     if (resampler) {
-      decoder->addFrameAcceptor(resampler);
-      resampler->addFrameAcceptor(renderDriver);
+      decoder->addReceiver(resampler);
+      resampler->addReceiver(renderDriver);
     } else {
-      decoder->addFrameAcceptor(renderDriver);
+      decoder->addReceiver(renderDriver);
     }
 
-    renderDriver->start(meta);
+    renderDriver->start();
     decoder->start();
   }
   
-  void stop() {
+  void stop() override {
     decoder->stop();
     renderDriver->stop();
     
     if (resampler) {
-      decoder->removeFrameAcceptor(resampler);
-      resampler->removeFrameAcceptor(renderDriver);
+      decoder->removeReceiver(resampler);
+      resampler->removeReceiver(renderDriver);
     } else {
-      decoder->removeFrameAcceptor(renderDriver);
+      decoder->removeReceiver(renderDriver);
     }
-
-    source->removePacketAcceptor(decoder);
+  }
+  
+  void didReceivePipelineMessage(const PipelineMessage& msg) override {
+    if (msg.at("stream_object").value.ptr == meta.at("stream_object").value.ptr) {
+      decoder->didReceivePipelineMessage(msg);
+    }
   }
   
 private:
   StreamMeta meta;
-  PassiveMediaSource *source;
-  Decoder            *decoder;
-  Resampler          *resampler;
-  RenderDriver       *renderDriver;
+  Cell *decoder;
+  Cell *resampler;
+  RenderDriver *renderDriver;
 };
 
 class Coordinator : public RenderDriverDelegate {
 public:
-  Coordinator(PassiveMediaSource *source) {
+  Coordinator(MediaSource *source) {
     this->source = lms::retain(source);
     this->isRunning = false;
   }
@@ -498,15 +504,15 @@ public:
   }
   
 private:
-  PassiveMediaSource *source;
+  MediaSource *source;
   std::atomic<bool> isRunning;
 };
 
 
-Player::Player(PassiveMediaSource *s, Cell *vrender) {
-  this->source      = lms::retain(s);
+Player::Player(MediaSource *mediaSource, Cell *vrender) {
+  this->mediaSource = lms::retain(mediaSource);
   this->vrender     = lms::retain(vrender);
-  this->coordinator = new Coordinator(s);
+  this->coordinator = new Coordinator(mediaSource);
   this->timesync    = new TimeSync;
   this->vstream     = nullptr;
   this->astream     = nullptr;
@@ -518,7 +524,7 @@ Player::~Player() {
 
   lms::release(coordinator);
   lms::release(timesync);
-  lms::release(source);
+  lms::release(mediaSource);
   lms::release(vrender);
 }
 
@@ -526,36 +532,36 @@ void Player::play() {
   LMSLogInfo(nullptr);
 
   // 必须先加载source的数据才能获取当中的元信息
-  if (source->open() != 0) {
+  if (mediaSource->open() != 0) {
     return;
   }
   
-  auto nbStreams = source->numberOfStreams();
+  auto nbStreams = mediaSource->numberOfStreams();
   int  streamId = -1;
   for (int i = 0; i < nbStreams; i += 1) {
-    auto meta   = source->streamMetaAt(i);
-    auto smi    = source->getStreamMeta(i);
-    auto stream = (AVStream *)meta.data;
+    auto meta   = mediaSource->getStreamMeta(i);
+    auto mtype  = meta.at("media_type").value.u;
+    auto stream = (AVStream *)meta.at("stream_object").value.ptr;
 
-    if (meta.mediaType == MediaTypeVideo) {
+    if (mtype == MediaTypeVideo) {
       VideoRenderDriver *driver = new VideoRenderDriver(stream, vrender, timesync);
-      Decoder *decoder = createDecoder(meta);
-
       driver->setDelegate(coordinator);
-      vstream = new Stream(meta, source, decoder, nullptr, driver);
+      
+      Cell *decoder = createDecoder(meta);
+      vstream = new Stream(meta, decoder, nullptr, driver);
 
-      vrender->configure(smi);
+      vrender->configure(meta);
 
       lms::release(driver);
       lms::release(decoder);
-    } else if (meta.mediaType == MediaTypeAudio) {
+    } else if (mtype == MediaTypeAudio) {
       SDLSpeaker *speaker = new SDLSpeaker(stream, timesync);
       speaker->setDelegate(coordinator);
 
-      Decoder *decoder = createDecoder(meta);
+      Cell *decoder = createDecoder(meta);
 
       SDLAudioResampler *resampler = new SDLAudioResampler(stream);
-      astream = new Stream(meta, source, decoder, resampler, speaker);
+      astream = new Stream(meta, decoder, resampler, speaker);
       
       lms::release(resampler);
       lms::release(decoder);
@@ -574,8 +580,16 @@ void Player::play() {
   // 置零为止。
   timesync->updateTimePivot(InvalidPlayingTime);
   
-  if (vstream) vstream->start();
-  if (astream) astream->start();
+  if (vstream) {
+    mediaSource->addReceiver(vstream);
+    vstream->start();
+  }
+  
+  if (astream) {
+    mediaSource->addReceiver(astream);
+    astream->start();
+  }
+  
   coordinator->start();
 }
 
@@ -584,10 +598,17 @@ void Player::stop() {
   
   coordinator->stop();
     
-  source->close();
+  mediaSource->close();
 
-  if (astream) astream->stop();
-  if (vstream) vstream->stop();
+  if (astream) {
+    astream->stop();
+    mediaSource->removeReceiver(astream);
+  }
+  
+  if (vstream) {
+    vstream->stop();
+    mediaSource->removeReceiver(vstream);
+  }
 
   lms::release(vstream);
   vstream = nullptr;

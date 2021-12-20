@@ -11,14 +11,10 @@
 #include <lms/Logger.h>
 #include <lms/MediaSource.h>
 #include <lms/Player.h>
-#include <lms/Render.h>
 
 namespace lms {
 
-typedef struct {
-} InitParams;
-
-void init(InitParams params = {});
+void init();
 void unInit();
 
 } // namespace lms

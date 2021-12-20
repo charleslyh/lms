@@ -21,29 +21,18 @@ int FFVideoFile::numberOfStreams() {
   return context->nb_streams;
 }
 
-lms::StreamMeta FFVideoFile::streamMetaAt(int index) {
-  auto st = context->streams[index];
-  return {
-    "ffmpeg",
-    st,
-    index,
-    (lms::MediaType)st->codecpar->codec_type,
-    av_q2d(st->avg_frame_rate),
-  };
-}
-
-lms::StreamMetaInfo FFVideoFile::getStreamMeta(size_t streamIndex) {
-  lms::StreamMetaInfo smi;
+lms::StreamMeta FFVideoFile::getStreamMeta(size_t streamIndex) {
+  lms::StreamMeta meta;
   
   if (streamIndex < context->nb_streams) {
     AVStream *stream = context->streams[streamIndex];
-    smi["source_type"]       = "avformat";
-    smi["stream_media_type"] = (uint64_t)stream->codecpar->codec_type;
-    smi["stream_class"]      = "AVStream";
-    smi["stream_object"]     = stream;
+    meta["source_type"]   = "avformat";
+    meta["media_type"]    = (uint64_t)stream->codecpar->codec_type;
+    meta["stream_class"]  = "AVStream";
+    meta["stream_object"] = stream;
   }
   
-  return smi;
+  return meta;
 }
 
 int FFVideoFile::open() {
@@ -77,18 +66,7 @@ void FFVideoFile::close() {
 
 void FFVideoFile::loadPackets(int numberRequested) {
   LMSLogVerbose("numberRequested=%d", numberRequested);
-  
-  class AVPacketHolder : public lms::ResourceHolder {
-  protected:
-    void* retain(void *object) override {
-      return object;
-    }
     
-    void release(void *object) override {
-      av_packet_unref((AVPacket *)object);
-    }
-  };
-  
   // TODO: 使用独立的queue来加载数据
   async(lms::mainQueue(), this, [this, numberRequested] {
     for (int i = 0; i< numberRequested; i += 1) {
@@ -104,17 +82,13 @@ void FFVideoFile::loadPackets(int numberRequested) {
                       avpkt->duration,
                       avpkt->size);
         
-        lms::ResourceHolder *holder = new AVPacketHolder;
-        lms::Packet *pkt = new lms::Packet(avpkt, holder);
-        pkt->streamIndex = avpkt->stream_index;
-        pkt->data        = avpkt->data;
-        pkt->size        = avpkt->size;
-        pkt->pts         = avpkt->pts;
+        lms::PipelineMessage msg;
+        msg["type"]          = "media_packet";
+        msg["stream_object"] = context->streams[avpkt->stream_index];
+        msg["packet_object"] = avpkt;
+        this->deliverPacketMessage(msg);
 
-        deliverPacket(pkt);
-
-        lms::release(pkt);
-        lms::release(holder);
+        av_packet_unref((AVPacket *)avpkt);
       } else {
         av_packet_free(&avpkt);
       }

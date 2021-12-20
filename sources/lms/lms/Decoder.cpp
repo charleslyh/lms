@@ -1,15 +1,15 @@
 #include "Decoder.h"
 #include "Logger.h"
-#include "Packet.h"
 #include "Runtime.h"
 extern "C" {
 #include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
 }
 #include <inttypes.h>
 
 namespace lms {
 
-class FFMDecoder : public Decoder {
+class FFMDecoder : public Cell {
 public:
   FFMDecoder(AVStream *stream) {
     this->params = stream->codecpar;
@@ -33,14 +33,12 @@ public:
 protected:
   void start() override;
   void stop() override;
-  DecoderMeta meta() override;
   
-protected:
-  void didReceivePacket(Packet *packet) override;
+  void didReceivePipelineMessage(const PipelineMessage& msg) override;
   
 private:
   AVCodecParameters *params;
-  AVCodecContext    *codecContext;
+  AVCodecContext *codecContext;
   AVCodec *codec;
   AVFrame *frameDecoded;
 };
@@ -69,35 +67,20 @@ void FFMDecoder::stop() {
   avcodec_close(codecContext);
 }
 
-DecoderMeta FFMDecoder::meta() {
-  return {
-    "ffmpeg",
-    (void *)codecContext,
-    params->width,
-    params->height,
-  };
-}
-
-void FFMDecoder::didReceivePacket(Packet *pkt) {
-  assert(pkt != nullptr);
+void FFMDecoder::didReceivePipelineMessage(const PipelineMessage& msg) {
+  auto srcpkt = (AVPacket *)msg.at("packet_object").value.ptr;
+  assert(srcpkt != nullptr);
 
   // 由于下面的解码过程可能会被异步调度（延迟）处理，为了避免在函数‘立即’返回后，pkt资源被释放
   // 这里对pkt进行了一次人为引用（或者需要clone？）
-  lms::retain(pkt);
-  std::shared_ptr<Packet> pktHolder(pkt, [] (Packet *pkt) { lms::release(pkt); });
+  AVPacket *avpkt = av_packet_clone(srcpkt);
+  std::shared_ptr<AVPacket> pktHolder(avpkt, [] (AVPacket *pkt) { av_packet_free(&pkt); });
   
   // TODO: 使用独立的queue来进行解码
-  async(mainQueue(), this, [this, pkt, pktHolder]() {
-    notifyDecoderEvent(pkt, 0);
-       
-    AVPacket avpkt = {0};
-    avpkt.data = pkt->data;
-    avpkt.size = pkt->size;
-    avpkt.pts  = pkt->pts;
-    
-    LMSLogVerbose("Begin decoding frame: pts=%" PRIi64, avpkt.pts);
+  async(mainQueue(), this, [this, avpkt, pktHolder]() {
+    LMSLogVerbose("Begin decoding frame: pts=%" PRIi64, avpkt->pts);
 
-    int rt = avcodec_send_packet(codecContext, &avpkt);
+    int rt = avcodec_send_packet(codecContext, avpkt);
     AVFrame *frame = frameDecoded;
     if (rt < 0) {
       LMSLogError("Error sending packet for decoding: %d", rt);
@@ -112,44 +95,22 @@ void FFMDecoder::didReceivePacket(Packet *pkt) {
         break;
       }
       
-      deliverFrame(frame);
+      PipelineMessage frameMsg;
+      frameMsg["type"]  = "media_frame";
+      frameMsg["frame"] = frame;
+      deliverPipelineMessage(frameMsg);
       av_frame_unref(frame);
     }
     
-    LMSLogVerbose("End decoding frame: pts=%" PRIi64, avpkt.pts);
-    notifyDecoderEvent(pkt, 1);
+    LMSLogVerbose("End decoding frame: pts=%" PRIi64, avpkt->pts);
   });
 }
 
-Decoder::~Decoder() {
-  setDelegate(nullptr);
-}
-
-void Decoder::setDelegate(DecoderDelegate *delegate) {
-  if (this->delegate != nullptr) {
-    lms::release(this->delegate);
-  }
-  
-  this->delegate = lms::retain(delegate);
-}
-
-void Decoder::notifyDecoderEvent(Packet *packet, int type) {
-  if (delegate == nullptr) {
-    return;
-  }
-  
-  if (type == 0) {
-    delegate->willStartDecodingPacket(packet);
-  } else if (type == 1) {
-    delegate->didFinishDecodingPacket(packet);
-  }
-}
-
-Decoder *createDecoder(const StreamMeta& meta) {
+Cell *createDecoder(const StreamMeta& meta) {
   // 根据meta信息匹配一个可创建，且最合适的解码器
 
   // 为了测试，返回一个假的解码器
-  auto st = (AVStream *)meta.data;
+  auto st = (AVStream *)meta.at("stream_object").value.ptr;
   return new FFMDecoder(st);
 }
 

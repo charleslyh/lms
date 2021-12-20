@@ -164,7 +164,7 @@ struct Variant : virtual public Object {
       delete ref;
     }
 
-    construct(type, rhs.retainer, rhs.releaser, rhs.ref);
+    construct(rhs.type, rhs.retainer, rhs.releaser, rhs.ref);
 
     if (rhs.retainer) {
       value = rhs.retainer(rhs.value);
@@ -222,7 +222,7 @@ private:
   VariantRef *ref;
 };
 
-typedef std::map<std::string, Variant> StreamMetaInfo;
+typedef std::map<std::string, Variant> StreamMeta;
 
 class FrameAcceptor : virtual public Object {
 public:

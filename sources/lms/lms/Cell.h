@@ -11,22 +11,22 @@
 
 namespace lms {
 
-typedef std::map<std::string, Variant> CellMessage;
+typedef std::map<std::string, Variant> PipelineMessage;
 
 class Cell : virtual public Object {
 public:
-  virtual void configure(const StreamMetaInfo& streamMeta) = 0;
+  virtual void configure(const StreamMeta& meta) {}
   virtual void start() = 0;
   virtual void stop() = 0;
   
-  virtual void didReceiveCellMessage(const CellMessage& cmsg) = 0;
+  virtual void didReceivePipelineMessage(const PipelineMessage& cmsg) = 0;
   
 public:
   void addReceiver(Cell *receiver);
   void removeReceiver(Cell *receiver);
 
 protected:
-  void deliverCellMessage(const CellMessage& cmsg);
+  void deliverPipelineMessage(const PipelineMessage& cmsg);
   
 private:
   std::list<Cell *> receivers;

@@ -19,11 +19,11 @@ void Cell::removeReceiver(Cell *receiver) {
   receivers.remove(receiver);
 }
 
-void Cell::deliverCellMessage(const CellMessage& cmsg) {
+void Cell::deliverPipelineMessage(const PipelineMessage& cmsg) {
   // TODO: ASSERT(is lms main thread)
   
   for (auto r : receivers) {
-    r->didReceiveCellMessage(cmsg);
+    r->didReceivePipelineMessage(cmsg);
   }
 }
 

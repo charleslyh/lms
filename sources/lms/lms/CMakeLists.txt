@@ -17,7 +17,6 @@ list(APPEND interface_headers
   LMS.h
   Foundation.h
   Logger.h
-  Render.h
   MediaSource.h
   Player.h
 )
@@ -37,16 +36,12 @@ list(APPEND implement_files
 
   Decoder.h
   Decoder.cpp
-
-  Packet.h
-  Packet.cpp
-  
+ 
   LMS.cpp
   Foundation.cpp
   Logger.cpp
   MediaSource.cpp
   Player.cpp
-  Render.cpp
 )
 
 # lms引用的第三方库源代码文件

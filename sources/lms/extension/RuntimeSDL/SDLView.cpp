@@ -109,7 +109,7 @@ private:
   AVFrame *cacheFrame;
 };
 
-void SDLView::configure(const lms::StreamMetaInfo &meta) {
+void SDLView::configure(const lms::StreamMeta &meta) {
   this->st = (AVStream *)(meta.at("stream_object").value.ptr);
 }
 
@@ -175,8 +175,8 @@ void SDLView::setContentMode(SDLView::ContentMode contentMode) {
   this->contentMode = contentMode;
 }
 
-void SDLView::didReceiveCellMessage(const lms::CellMessage &msg) {
-  AVFrame *inputFrame = (AVFrame *)msg.at("media-frame").value.ptr;
+void SDLView::didReceivePipelineMessage(const lms::PipelineMessage &msg) {
+  AVFrame *inputFrame = (AVFrame *)msg.at("frame").value.ptr;
   auto frame = av_frame_clone(inputFrame);
   
   double ts = frame->best_effort_timestamp * av_q2d(st->time_base);
