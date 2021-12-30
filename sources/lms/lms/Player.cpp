@@ -421,6 +421,7 @@ class Stream : public Cell {
 public:
   Stream(const StreamMeta &meta, Cell *decoder, Cell *resampler, RenderDriver *renderDriver) {
     this->meta         = meta;
+    this->streamObject = meta.at("stream_object").value.ptr;
     this->renderDriver = lms::retain(renderDriver);
     this->resampler    = lms::retain(resampler);
     this->decoder      = lms::retain(decoder);
@@ -457,23 +458,24 @@ public:
   }
   
   void didReceivePipelineMessage(const PipelineMessage& msg) override {
-    if (msg.at("stream_object").value.ptr == meta.at("stream_object").value.ptr) {
+    if (msg.at("stream_object").value.ptr == streamObject) {
       decoder->didReceivePipelineMessage(msg);
     }
   }
   
 private:
   StreamMeta meta;
+  void *streamObject;
   Cell *decoder;
   Cell *resampler;
   RenderDriver *renderDriver;
 };
 
-class Coordinator : public RenderDriverDelegate {
+class Coordinator : virtual public Object {
 public:
   Coordinator(MediaSource *source) {
     this->source = lms::retain(source);
-    this->isRunning = false;
+    this->timer  = nullptr;
   }
   
   ~Coordinator() {
@@ -481,31 +483,25 @@ public:
   }
 
 public:
-  void start() {
-    isRunning = true;
+  void start(RenderDriver* driver) {
+    LMSLogInfo("Start coordinator");
 
-    this->source->loadPackets(10);
+    this->timer = scheduleTimer("Coordinator Timer", 0.1, [this, driver] () {
+      if (driver->cachedPlayingTime() < 1.0) {
+        source->loadPackets(20);
+      }
+    });
   }
   
   void stop() {
-    isRunning = false;
-  }
- 
-  void didRunRenderLoop(RenderDriver* driver) override {
-    LMSLogVerbose("isRunning: %d, RenderDriver: %p, cachedPlayingTime: %.2lf", isRunning.load(), driver, driver->cachedPlayingTime());
-    
-    if (!isRunning) {
-      return;
-    }
-    
-    if (driver->cachedPlayingTime() < 1.0) {
-      this->source->loadPackets(5);
-    }
+    LMSLogInfo("Stop coordinator");
+
+    invalidateTimer(this->timer);
   }
   
 private:
   MediaSource *source;
-  std::atomic<bool> isRunning;
+  Timer *timer;
 };
 
 
@@ -536,6 +532,8 @@ void Player::play() {
     return;
   }
   
+  RenderDriver *theDriver = nullptr;
+
   auto nbStreams = mediaSource->numberOfStreams();
   int  streamId = -1;
   for (int i = 0; i < nbStreams; i += 1) {
@@ -545,7 +543,7 @@ void Player::play() {
 
     if (mtype == MediaTypeVideo) {
       VideoRenderDriver *driver = new VideoRenderDriver(stream, vrender, timesync);
-      driver->setDelegate(coordinator);
+      theDriver = driver;
       
       Cell *decoder = createDecoder(meta);
       vstream = new Stream(meta, decoder, nullptr, driver);
@@ -556,7 +554,6 @@ void Player::play() {
       lms::release(decoder);
     } else if (mtype == MediaTypeAudio) {
       SDLSpeaker *speaker = new SDLSpeaker(stream, timesync);
-      speaker->setDelegate(coordinator);
 
       Cell *decoder = createDecoder(meta);
 
@@ -590,7 +587,7 @@ void Player::play() {
     astream->start();
   }
   
-  coordinator->start();
+  coordinator->start(theDriver);
 }
 
 void Player::stop() {
