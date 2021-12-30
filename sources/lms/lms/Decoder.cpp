@@ -78,23 +78,28 @@ void FFMDecoder::didReceivePipelineMessage(const PipelineMessage& msg) {
   
   // TODO: 使用独立的queue来进行解码
   async(mainQueue(), this, [this, avpkt, pktHolder]() {
-    LMSLogVerbose("Begin decoding frame: pts=%" PRIi64, avpkt->pts);
+    LMSLogDebug("Begin decode: stream=%d, flags=0x%02X, duration=%" PRIi64 ", pts=%" PRIi64,
+                avpkt->stream_index, avpkt->flags, avpkt->duration, avpkt->pts);
 
     int rt = avcodec_send_packet(codecContext, avpkt);
-    AVFrame *frame = frameDecoded;
     if (rt < 0) {
       LMSLogError("Error sending packet for decoding: %d", rt);
     }
 
+    AVFrame *frame = frameDecoded;
     while (rt >= 0) {
       rt = avcodec_receive_frame(codecContext, frame);
-      if (rt == AVERROR(EAGAIN) || rt == AVERROR_EOF) {
+      if (rt == AVERROR(EAGAIN)) {
+        // 数据不足，需要继续喂数据才能完成解码
+        break;
+      } else if (rt == AVERROR_EOF) {
+        // 已读取完所有数据
         break;
       } else if (rt < 0) {
         LMSLogError("Error while decoding: %d", rt);
         break;
       }
-      
+            
       PipelineMessage frameMsg;
       frameMsg["type"]  = "media_frame";
       frameMsg["frame"] = frame;
@@ -102,7 +107,7 @@ void FFMDecoder::didReceivePipelineMessage(const PipelineMessage& msg) {
       av_frame_unref(frame);
     }
     
-    LMSLogVerbose("End decoding frame: pts=%" PRIi64, avpkt->pts);
+    LMSLogDebug("End decode: stream=%d, pts=%" PRIi64, avpkt->stream_index, avpkt->pts);
   });
 }
 
