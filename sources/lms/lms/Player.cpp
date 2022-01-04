@@ -224,7 +224,7 @@ private:
     
     while(len > 0) {
       if (self->frameItems->count() < SDLSpeaker::IdealCachingFrames) {
-        fireEvent("shouldLoadNextFrame", self, {
+        fireEvent("should_load_next_frame", self, {
           {"stream_object", self->stream}
         });
       }
@@ -336,7 +336,7 @@ public:
         SDL_UnlockMutex(frameMutex);
         
         if (frame == nullptr) {
-          lms::fireEvent("shouldLoadNextFrame", this, loadingParams);
+          lms::fireEvent("should_load_next_frame", this, loadingParams);
           LMSLogWarning("No video frame!");
           return;
         }
@@ -356,7 +356,7 @@ public:
           LMSLogWarning("Video frame dropped");
           av_frame_unref(frame);
 
-          lms::fireEvent("shouldLoadNextFrame", this, loadingParams);
+          lms::fireEvent("should_load_next_frame", this, loadingParams);
           continue;
         } else
         if (deviation > tollerance) {
@@ -372,7 +372,7 @@ public:
           frame = nullptr;
           return;
         } else {
-          lms::fireEvent("shouldLoadNextFrame", this, loadingParams);
+          lms::fireEvent("should_load_next_frame", this, loadingParams);
           break;
         }
       }
@@ -607,8 +607,6 @@ void Player::stop() {
   
   coordinator->stop();
     
-  mediaSource->close();
-
   if (astream) {
     astream->stop();
     mediaSource->removeReceiver(astream);
@@ -618,6 +616,8 @@ void Player::stop() {
     vstream->stop();
     mediaSource->removeReceiver(vstream);
   }
+
+  mediaSource->close();
 
   lms::release(vstream);
   vstream = nullptr;
