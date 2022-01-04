@@ -188,7 +188,9 @@ public:
     request_specs.format   = AUDIO_S16;
     request_specs.channels = av_get_channel_layout_nb_channels(stream->codecpar->channel_layout);
     request_specs.silence  = 0;
-    request_specs.samples  = 1024;
+
+    // stream->codecpar->frame_size表示每个音频帧中包含的样本数，这么做可以尽可能保证每个数据回调都正好消耗掉一个音频帧
+    request_specs.samples  = stream->codecpar->frame_size;
     request_specs.callback = (SDL_AudioCallback) loadAudioData;
     request_specs.userdata = this;
 
@@ -221,10 +223,16 @@ private:
     memset(data, 0, len);
     
     while(len > 0) {
+      if (self->frameItems->count() < SDLSpeaker::IdealCachingFrames) {
+        fireEvent("shouldLoadNextFrame", self, {
+          {"stream_object", self->stream}
+        });
+      }
+      
       AudioFrameItem *afi = self->frameItems->popFront();
       if (afi == nullptr) {
         LMSLogWarning("No audio frame available!");
-        break;
+        continue;
       }
       
       AVFrame *frame = afi->frame;
@@ -232,8 +240,8 @@ private:
       double ts = frame->pts * av_q2d(self->stream->time_base);
       self->timeSync->updateTimePivot(ts);
       
-      LMSLogVerbose("Start rendering audio frame | ts:%.2lf, pts:%llu, remains: %lu",
-                    ts, frame->pts, self->frameItems->count());
+      LMSLogVerbose("Rendering audio frame | ts:%.2lf, pts:%llu, remain_bytes:%u, remains_frames:%lu",
+                    ts, frame->pts, afi->remainBytes, self->frameItems->count());
             
       int bytesToWrite = std::min(afi->remainBytes, len);
       memcpy(data, afi->rptr, bytesToWrite);
@@ -276,6 +284,8 @@ private:
   TimeSync *timeSync;
   FramesBuffer<AudioFrameItem *> *frameItems;
   std::atomic<uint32_t> totalSamples;
+  
+  constexpr static int IdealCachingFrames = 10;
 };
 
 class VideoRenderDriver : public RenderDriver {

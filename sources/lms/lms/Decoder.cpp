@@ -132,7 +132,7 @@ void FFMDecoder::start() {
     return;
   }
   
-  if (params->codec_type == AVMEDIA_TYPE_VIDEO) {
+//  if (params->codec_type == AVMEDIA_TYPE_VIDEO) {
     addEventObserver("shouldLoadNextFrame", nullptr, [this] (const char *name, void *sender, const EventParams& p) {
       AVStream *streamObject = (AVStream *)variantsGetPointer(p, "stream_object");
       
@@ -145,7 +145,7 @@ void FFMDecoder::start() {
     const char *tname = params->codec_type == AVMEDIA_TYPE_VIDEO ? "DecodingVideo" : "DecodingAudio";
     decoding = true;
     thread   = SDL_CreateThread((SDL_ThreadFunction)FFMDecoder::decodingThreadProc, tname, this);
-  }
+//  }
 }
 
 void FFMDecoder::stop() {
@@ -176,44 +176,44 @@ void FFMDecoder::didReceivePipelineMessage(const PipelineMessage& msg) {
   auto srcpkt = (AVPacket *)msg.at("packet_object").value.ptr;
   assert(srcpkt != nullptr);
 
-  if (params->codec_type == AVMEDIA_TYPE_AUDIO) {
-    AVPacket *avpkt = av_packet_clone(srcpkt);
-    std::shared_ptr<AVPacket> pktHolder(avpkt, [] (AVPacket *pkt) { av_packet_free(&pkt); });
-    
-    // TODO: 使用独立的queue来进行解码
-    async(mainQueue(), this, [this, avpkt, pktHolder]() {
-      LMSLogDebug("Begin decode: stream=%d, flags=0x%02X, duration=%" PRIi64 ", pts=%" PRIi64,
-                  avpkt->stream_index, avpkt->flags, avpkt->duration, avpkt->pts);
-
-      int rt = avcodec_send_packet(codecContext, avpkt);
-      if (rt < 0) {
-        LMSLogError("Error sending packet for decoding: %d", rt);
-      }
-
-      AVFrame *frame = frameDecoded;
-      while (rt >= 0) {
-        rt = avcodec_receive_frame(codecContext, frame);
-        if (rt == AVERROR(EAGAIN)) {
-          // 数据不足，需要继续喂数据才能完成解码
-          break;
-        } else if (rt == AVERROR_EOF) {
-          // 已读取完所有数据
-          break;
-        } else if (rt < 0) {
-          LMSLogError("Error while decoding: %d", rt);
-          break;
-        }
-              
-        PipelineMessage frameMsg;
-        frameMsg["type"]  = "media_frame";
-        frameMsg["frame"] = frame;
-        deliverPipelineMessage(frameMsg);
-        av_frame_unref(frame);
-      }
-      
-      LMSLogDebug("End decode: stream=%d, pts=%" PRIi64, avpkt->stream_index, avpkt->pts);
-    });
-  } else if (params->codec_type == AVMEDIA_TYPE_VIDEO) {
+//  if (params->codec_type == AVMEDIA_TYPE_AUDIO) {
+//    AVPacket *avpkt = av_packet_clone(srcpkt);
+//    std::shared_ptr<AVPacket> pktHolder(avpkt, [] (AVPacket *pkt) { av_packet_free(&pkt); });
+//
+//    // TODO: 使用独立的queue来进行解码
+//    async(mainQueue(), this, [this, avpkt, pktHolder]() {
+//      LMSLogDebug("Begin decode: stream=%d, flags=0x%02X, duration=%" PRIi64 ", pts=%" PRIi64,
+//                  avpkt->stream_index, avpkt->flags, avpkt->duration, avpkt->pts);
+//
+//      int rt = avcodec_send_packet(codecContext, avpkt);
+//      if (rt < 0) {
+//        LMSLogError("Error sending packet for decoding: %d", rt);
+//      }
+//
+//      AVFrame *frame = frameDecoded;
+//      while (rt >= 0) {
+//        rt = avcodec_receive_frame(codecContext, frame);
+//        if (rt == AVERROR(EAGAIN)) {
+//          // 数据不足，需要继续喂数据才能完成解码
+//          break;
+//        } else if (rt == AVERROR_EOF) {
+//          // 已读取完所有数据
+//          break;
+//        } else if (rt < 0) {
+//          LMSLogError("Error while decoding: %d", rt);
+//          break;
+//        }
+//
+//        PipelineMessage frameMsg;
+//        frameMsg["type"]  = "media_frame";
+//        frameMsg["frame"] = frame;
+//        deliverPipelineMessage(frameMsg);
+//        av_frame_unref(frame);
+//      }
+//
+//      LMSLogDebug("End decode: stream=%d, pts=%" PRIi64, avpkt->stream_index, avpkt->pts);
+//    });
+//  } else if (params->codec_type == AVMEDIA_TYPE_VIDEO) {
     SDL_LockMutex(packetsMutex);
     {
       // 由于下面的解码过程可能会被异步调度（延迟）处理，为了避免在函数‘立即’返回后，pkt资源被释放
@@ -222,7 +222,7 @@ void FFMDecoder::didReceivePipelineMessage(const PipelineMessage& msg) {
       packets.push_back(avpkt);
     }
     SDL_UnlockMutex(packetsMutex);
-  }
+//  }
 }
 
 Cell *createDecoder(const StreamMeta& meta) {
