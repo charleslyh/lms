@@ -125,4 +125,26 @@ void Object::unref() {
   }
 }
 
+#define IMPLEMENT_VARIANTS_GETTER(RTYPE, VTYPE, ValueField)\
+RTYPE variantsGet##VTYPE(const Variants& variants, const std::string& key, RTYPE defaultValue) {\
+  auto it = variants.find(key);\
+  if (it == variants.end()) {\
+    return defaultValue;\
+  }\
+\
+  if (it->second.type != Variant::VTYPE) {\
+    return defaultValue;\
+  }\
+\
+  return it->second.value.ValueField;\
+}
+
+IMPLEMENT_VARIANTS_GETTER(bool        ,Bool      ,b);
+IMPLEMENT_VARIANTS_GETTER(int64_t     ,Int       ,i);
+IMPLEMENT_VARIANTS_GETTER(uint64_t    ,UInt      ,u);
+IMPLEMENT_VARIANTS_GETTER(char        ,Char      ,c);
+IMPLEMENT_VARIANTS_GETTER(const char* ,CString   ,cstr);
+IMPLEMENT_VARIANTS_GETTER(void*       ,Pointer   ,ptr);
+IMPLEMENT_VARIANTS_GETTER(Object*     ,LMSObject ,obj);
+
 }

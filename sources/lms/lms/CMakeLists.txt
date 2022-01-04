@@ -18,11 +18,12 @@ list(APPEND interface_headers
   Foundation.h
   Logger.h
   MediaSource.h
+  Events.h
   Player.h
 )
 
 # lms内部实现文件列表
-list(APPEND implement_files
+list(APPEND source_files
   Module.h
   
   Cell.h
@@ -36,6 +37,8 @@ list(APPEND implement_files
 
   Decoder.h
   Decoder.cpp
+  
+  Events.cpp
  
   LMS.cpp
   Foundation.cpp
@@ -52,10 +55,10 @@ list(APPEND thirdparty_files
 
 target_sources(lms
   PUBLIC  ${interface_headers}
-  PRIVATE ${implement_files}
+  PRIVATE ${source_files}
   PRIVATE ${thirdparty_files}
 )
 
 source_group("Interface"  FILES ${interface_headers})
-source_group("Implement"  FILES ${implement_files})
+source_group("Sources"    FILES ${source_files})
 source_group("ThirdParty" FILES ${thirdparty_files})

@@ -3,6 +3,7 @@
 #include <lms/Logger.h>
 #include <lms/Runtime.h>
 #include <lms/Foundation.h>
+#include <lms/Events.h>
 extern "C" {
   #include <libavformat/avformat.h>
   #include <libavutil/imgutils.h>
@@ -205,7 +206,7 @@ void SDLView::didReceivePipelineMessage(const lms::PipelineMessage &msg) {
     SDL_RenderClear(renderer);
     SDL_RenderCopy(renderer, texture, NULL, &drawRect);
     SDL_RenderPresent(renderer);
-
+    
     Uint32 t2 = SDL_GetTicks();
 
     av_frame_unref(frame);

@@ -13,9 +13,11 @@ namespace lms {
 // TODO: 使用脚本进行注入，而不是手动导入符号
 extern Module moduleLogger;
 extern Module moduleRuntime;
+extern Module moduleEventCenter;
 
 static Module mods[] = {
   moduleRuntime,
+  moduleEventCenter,
 };
 
 void init() {

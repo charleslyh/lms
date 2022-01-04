@@ -10,7 +10,7 @@ public:
     lms::init();
     
     // 设置日志过滤等级，一般默认为Info，但在调试场景下，可以使用Verbose来获取更完备的信息
-    lms::setLogLevel(lms::LogLevelDebug);
+    lms::setLogLevel(lms::LogLevelVerbose);
 
     auto src = new FFVideoFile(argv[1]);
     auto view = new SDLView;

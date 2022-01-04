@@ -6,7 +6,7 @@ namespace lms {
 class LogWriterConsole : public LogWriter {
 public:
   void write(const char *log) override {
-    std::lock_guard<std::mutex> guard(mtx);
+//    std::lock_guard<std::mutex> guard(mtx);
     printf("%s", log);
   }
 

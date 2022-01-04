@@ -62,14 +62,14 @@ struct VariantRef {
 
 struct Variant : virtual public Object {
   typedef enum {
-    None          = 0,
-    Bool          = 'b',
-    Char          = 'c',
-    Int           = 'i',
-    UInt          = 'u',
-    CString       = 's',
-    OpaquePointer = '*',
-    LMSObject     = 'o',
+    None      = 0,
+    Bool      = 'b',
+    Char      = 'c',
+    Int       = 'i',
+    UInt      = 'u',
+    CString   = 's',
+    Pointer   = '*',
+    LMSObject = 'o',
   } Type;
   
   Type type;
@@ -123,7 +123,7 @@ struct Variant : virtual public Object {
   }
   
   Variant(void *ptr, PFNRetain retainer = nullptr, PFNRelease releaser = nullptr) {
-    construct(OpaquePointer, retainer, releaser);
+    construct(Pointer, retainer, releaser);
     
     if (retainer) {
       Value tmp;
@@ -222,7 +222,19 @@ private:
   VariantRef *ref;
 };
 
-typedef std::map<std::string, Variant> StreamMeta;
+typedef std::map<std::string, Variant> Variants;
+typedef Variants StreamMeta;
+
+#define DECLARE_VARIANTS_GETTER(RTYPE, VTYPE, DEF_VAL) \
+RTYPE variantsGet##VTYPE(const Variants&, const std::string&, RTYPE v = DEF_VAL)
+
+DECLARE_VARIANTS_GETTER(bool        ,Bool      ,false);
+DECLARE_VARIANTS_GETTER(int64_t     ,Int       ,0);
+DECLARE_VARIANTS_GETTER(uint64_t    ,UInt      ,0);
+DECLARE_VARIANTS_GETTER(char        ,Char      ,0);
+DECLARE_VARIANTS_GETTER(const char* ,CString   ,nullptr);
+DECLARE_VARIANTS_GETTER(void*       ,Pointer   ,nullptr);
+DECLARE_VARIANTS_GETTER(Object*     ,LMSObject ,nullptr);
 
 class FrameAcceptor : virtual public Object {
 public:

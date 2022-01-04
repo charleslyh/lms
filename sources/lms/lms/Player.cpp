@@ -5,6 +5,7 @@
 #include "Logger.h"
 #include "Runtime.h"
 #include "Cell.h"
+#include "Events.h"
 extern "C" {
   #include <libavcodec/avcodec.h>
   #include "libavutil/avutil.h"
@@ -46,32 +47,12 @@ private:
   std::atomic<uint64_t> tickPivot;
 };
 
-class RenderDriver;
-
-class RenderDriverDelegate : virtual public Object {
-public:
-  virtual void willRunRenderLoop(RenderDriver *driver) {}
-  virtual void didRunRenderLoop(RenderDriver *driver) {}
-};
-
 class RenderDriver : public Cell {
 public:
-  ~RenderDriver() {
-    lms::release(this->delegate);
-  }
-  
   virtual void start() = 0;
   virtual void stop() = 0;
   
   virtual double cachedPlayingTime() = 0;
-  
-  void setDelegate(RenderDriverDelegate *delegate) {
-    lms::release(this->delegate);
-    this->delegate = lms::retain(delegate);
-  }
-  
-protected:
-  RenderDriverDelegate *delegate = nullptr;
 };
 
 class SDLAudioResampler: public Cell {
@@ -237,10 +218,6 @@ protected:
   
 private:
   static void loadAudioData(SDLSpeaker *self, Uint8 *data, int len) {
-    if (self->delegate) {
-      self->delegate->willRunRenderLoop(self);
-    }
-
     memset(data, 0, len);
     
     while(len > 0) {
@@ -276,10 +253,6 @@ private:
         delete afi;
       }
     }
-    
-    if (self->delegate) {
-      self->delegate->didRunRenderLoop(self);
-    }
   }
   
   double cachedPlayingTime() override {
@@ -308,41 +281,56 @@ private:
 class VideoRenderDriver : public RenderDriver {
 public:
   VideoRenderDriver(AVStream *stream, Cell *videoRender, TimeSync *timeSync) {
-    this->stream   = stream;
-    this->render   = lms::retain(videoRender);
-    this->timeSync = lms::retain(timeSync);
-    this->buffer   = new FramesBuffer<AVFrame *>;
+    this->stream     = stream;
+    this->render     = lms::retain(videoRender);
+    this->timeSync   = lms::retain(timeSync);
+    this->frameMutex = SDL_CreateMutex();
+    this->nextFrame  = nullptr;
   }
   
   ~VideoRenderDriver() {
+    SDL_DestroyMutex(frameMutex);
     lms::release(render);
     lms::release(timeSync);
-    lms::release(buffer);
   }
  
   void start() override {
+    nextFrame = nullptr;
+
     render->start();
     
     double fps = av_q2d(stream->avg_frame_rate);
     double spf = 1.0 / fps; // second per frame, also timer interval
     
-    fpsTimer = scheduleTimer("FPSTimer", spf, [this, spf] {
+    fpsTimer = scheduleTimer("VideoRenderDriver", spf, [this, spf] {
       double playingTime = timeSync->getPlayingTime();
       if (playingTime < 0) {
         return;
       }
       
-      AVFrame *frame = nullptr;
-
-      // 从buffer中循环取出匹配当前播放时间的图像帧，或者buffer为空，则终止
+      AVFrame *frame;
+      
+      EventParams loadingParams = {
+        {"stream_object", this->stream}
+      };
+      
       while(true) {
-        frame = (AVFrame *)buffer->popFront();
-
+        frame = nullptr;
+        SDL_LockMutex(frameMutex);
+        {
+          if (nextFrame) {
+            frame = nextFrame;
+            nextFrame = nullptr;
+          }
+        }
+        SDL_UnlockMutex(frameMutex);
+        
         if (frame == nullptr) {
+          lms::fireEvent("shouldLoadNextFrame", this, loadingParams);
           LMSLogWarning("No video frame!");
           return;
         }
-
+        
         double frameTime = frame->best_effort_timestamp * av_q2d(stream->time_base);
 
         // deviation > 0 表示当前视频帧的应播时间大于当前播放时间（待播帧）
@@ -357,27 +345,30 @@ public:
           // 丢弃过期帧，继续下一帧（如果有）的处理
           LMSLogWarning("Video frame dropped");
           av_frame_unref(frame);
+
+          lms::fireEvent("shouldLoadNextFrame", this, loadingParams);
           continue;
-        } else if (deviation > tollerance) {
-          // 该帧尚未到播放时间，将其重入等待队列
-          buffer->pushFront(frame);
-          
+        } else
+        if (deviation > tollerance) {
+          SDL_LockMutex(frameMutex);
+          {
+            nextFrame = frame;
+          }
+          SDL_UnlockMutex(frameMutex);
+
           // 如果队列头的帧都未到播放时间，应认为后续帧也肯定未到播放时间，所以应直接退出渲染流程
           LMSLogWarning("Video frame refilled");
+
+          frame = nullptr;
           return;
         } else {
+          lms::fireEvent("shouldLoadNextFrame", this, loadingParams);
           break;
         }
       }
-
-      if (frame == nullptr) {
-        return;
-      }
-
-      if (delegate) {
-        delegate->willRunRenderLoop(this);
-      }
-
+      
+      assert(frame != nullptr);
+      
       if (render) {
         PipelineMessage msg;
         msg["type"]  = "media_frame";
@@ -386,9 +377,6 @@ public:
         av_frame_unref(frame);
       }
 
-      if (delegate) {
-        delegate->didRunRenderLoop(this);
-      }
     });
   }
   
@@ -397,16 +385,28 @@ public:
     lms::release(fpsTimer);
     
     render->stop();
+    
+    // TODO: 释放缓存帧
+    nextFrame = nullptr;
   }
   
   double cachedPlayingTime() override {
-    double spf = 1.0 / av_q2d(stream->avg_frame_rate);
-    return buffer->count() * spf;
+    // TODO:
+    return 0;
   }
   
   void didReceivePipelineMessage(const PipelineMessage& msg) override {
     auto avfrm = (AVFrame *)msg.at("frame").value.ptr;
-    buffer->pushBack(av_frame_clone(avfrm));
+    
+    SDL_LockMutex(frameMutex);
+    {
+      if (nextFrame) {
+        av_frame_free(&nextFrame);
+      }
+
+      nextFrame = av_frame_clone(avfrm);
+    }
+    SDL_UnlockMutex(frameMutex);
   }
  
 private:
@@ -414,7 +414,9 @@ private:
   Cell     *render;
   Timer    *fpsTimer;
   TimeSync *timeSync;
-  FramesBuffer<AVFrame *> *buffer;
+  
+  SDL_mutex *frameMutex;
+  AVFrame   *nextFrame;
 };
 
 class Stream : public Cell {
@@ -486,7 +488,7 @@ public:
   void start(RenderDriver* driver) {
     LMSLogInfo("Start coordinator");
 
-    this->timer = scheduleTimer("Coordinator Timer", 0.1, [this, driver] () {
+    this->timer = scheduleTimer("Coordinator", 0.1, [this, driver] () {
       if (driver->cachedPlayingTime() < 1.0) {
         source->loadPackets(20);
       }
@@ -543,7 +545,6 @@ void Player::play() {
 
     if (mtype == MediaTypeVideo) {
       VideoRenderDriver *driver = new VideoRenderDriver(stream, vrender, timesync);
-      theDriver = driver;
       
       Cell *decoder = createDecoder(meta);
       vstream = new Stream(meta, decoder, nullptr, driver);
@@ -554,6 +555,7 @@ void Player::play() {
       lms::release(decoder);
     } else if (mtype == MediaTypeAudio) {
       SDLSpeaker *speaker = new SDLSpeaker(stream, timesync);
+      theDriver = speaker;
 
       Cell *decoder = createDecoder(meta);
 

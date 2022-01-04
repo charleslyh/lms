@@ -68,6 +68,8 @@ static int runtimeTimerThread_SDL(SDLTimer *timer) {
   Uint32 begin  = SDL_GetTicks();
   LMSLogDebug("Timer start: name=%s, begin=%u, interval=%lf", timer->name, begin, intervalMS);
   
+  bool shouldDebug = strcmp(timer->name, "DecodeTimer") == 0;
+  
   while(!timer->shouldQuit) {
     timer->runnable->run();
     
