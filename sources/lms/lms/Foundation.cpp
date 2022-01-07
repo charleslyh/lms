@@ -132,10 +132,6 @@ RTYPE variantsGet##VTYPE(const Variants& variants, const std::string& key, RTYPE
     return defaultValue;\
   }\
 \
-  if (it->second.type != Variant::VTYPE) {\
-    return defaultValue;\
-  }\
-\
   return it->second.value.ValueField;\
 }
 

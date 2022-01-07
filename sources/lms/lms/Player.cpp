@@ -487,7 +487,6 @@ class Coordinator : virtual public Object {
 public:
   Coordinator(MediaSource *source) {
     this->source = lms::retain(source);
-    this->timer  = nullptr;
   }
   
   ~Coordinator() {
@@ -495,25 +494,33 @@ public:
   }
 
 public:
-  void start(RenderDriver* driver) {
+  void start() {
     LMSLogInfo("Start coordinator");
 
-    this->timer = scheduleTimer("Coordinator", 0.1, [this, driver] () {
-      if (driver->cachedPlayingTime() < 1.0) {
-        source->loadPackets(20);
-      }
-    });
+    obsDUP = addEventObserver("did_update_packets", nullptr, this, (EventCallback)onEventDidUpdatePackets);
+    source->loadPackets(100);
   }
   
   void stop() {
     LMSLogInfo("Stop coordinator");
-
-    invalidateTimer(this->timer);
+    
+    removeEventObserver(obsDUP);
+    obsDUP = nullptr;
+  }
+  
+private:
+  static void onEventDidUpdatePackets(Coordinator *self, const char *ename, void *sender, const EventParams& p) {
+    int type  = variantsGetUInt(p, "type");
+    int dec   = variantsGetUInt(p, "decrement");
+    
+    if (type == 2 /* decrement */ && dec > 0) {
+      self->source->loadPackets(dec);
+    }
   }
   
 private:
   MediaSource *source;
-  Timer *timer;
+  void        *obsDUP;
 };
 
 
@@ -599,14 +606,14 @@ void Player::play() {
     astream->start();
   }
   
-  coordinator->start(theDriver);
+  coordinator->start();
 }
 
 void Player::stop() {
   LMSLogInfo(nullptr);
   
   coordinator->stop();
-    
+  
   if (astream) {
     astream->stop();
     mediaSource->removeReceiver(astream);

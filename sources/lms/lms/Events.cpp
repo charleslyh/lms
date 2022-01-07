@@ -54,19 +54,23 @@ public:
     {
       observers.remove(o);
     }
-    SDL_UnlockMutex(mtx);
+    SDL_UnlockMutex(mtx);    
   }
   
   void fire(const char *name, void *sender, const EventParams& params) {
+    std::list<EventObserver *> cpy;
+    
     SDL_LockMutex(mtx);
     {
-      for (auto o : observers) {
-        if (strcmp(name, o->name) == 0 && (o->sender == nullptr || o->sender == sender)) {
-          o->handler->handleEvent(name, sender, params);
-        }
-      }
+      cpy = observers;
     }
     SDL_UnlockMutex(mtx);
+
+    for (auto o : cpy) {
+      if (strcmp(name, o->name) == 0 && (o->sender == nullptr || o->sender == sender)) {
+        o->handler->handleEvent(name, sender, params);
+      }
+    }
   }
   
 private:
@@ -75,12 +79,6 @@ private:
 };
 
 static EventCenter *_eventCenter;
-
-void* addEventObserver(const char *name, void *sender, EventHandler *handler) {
-  EventObserver *o = new EventObserver(name, sender, handler);
-  _eventCenter->addObserver(o);
-  return o;
-}
 
 class LambdaEventHandler : public EventHandler {
 public:
@@ -95,8 +93,41 @@ public:
   std::function<void(const char *, void *, const EventParams&)> block;
 };
 
+class CallbackEventHandler : public EventHandler {
+public:
+  CallbackEventHandler(void *context, EventCallback callback) {
+    this->context  = context;
+    this->callback = callback;
+  }
+  
+  void handleEvent(const char *name, void *sender, const EventParams& params) {
+    callback(context, name, sender, params);
+  }
+
+  void *context;
+  EventCallback callback;
+};
+
+void* addEventObserver(const char *name, void *sender, EventHandler *handler) {
+  EventObserver *o = new EventObserver(name, sender, handler);
+  _eventCenter->addObserver(o);
+  return o;
+}
+
 void* addEventObserver(const char *name, void *sender, std::function<void(const char *, void *, const EventParams&)> block) {
-  return addEventObserver(name, sender, new LambdaEventHandler(block));
+  EventHandler *handler = new LambdaEventHandler(block);
+  void *obs = addEventObserver(name, sender, handler);
+  lms::release(handler);
+
+  return obs;
+}
+
+void* addEventObserver(const char *name, void *sender, void *context, EventCallback evtCallback) {
+  EventHandler *handler = new CallbackEventHandler(context, evtCallback);
+  void *obs = addEventObserver(name, sender, handler);
+  lms::release(handler);
+
+  return obs;
 }
 
 void removeEventObserver(void *observer) {
