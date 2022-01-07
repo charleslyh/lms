@@ -231,8 +231,8 @@ private:
       
       AudioFrameItem *afi = self->frameItems->popFront();
       if (afi == nullptr) {
-        LMSLogWarning("No audio frame available!");
-        continue;
+        LMSLogWarning("No audio frame!");
+        break;
       }
       
       AVFrame *frame = afi->frame;

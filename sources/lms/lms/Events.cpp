@@ -54,6 +54,7 @@ public:
     {
       observers.remove(o);
     }
+    SDL_UnlockMutex(mtx);
   }
   
   void fire(const char *name, void *sender, const EventParams& params) {

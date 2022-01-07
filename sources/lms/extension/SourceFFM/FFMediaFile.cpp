@@ -1,27 +1,27 @@
-#include "FFVideoFile.h"
+#include "FFMediaFile.h"
 #include <lms/MediaSource.h>
 #include <lms/Logger.h>
 #include <lms/Runtime.h>
 
 
-FFVideoFile::FFVideoFile(const char *path) {
+FFMediaFile::FFMediaFile(const char *path) {
   LMSLogVerbose("Path=%s", path);
 
   this->context = nullptr;
   this->path = strdup(path);
 }
 
-FFVideoFile::~FFVideoFile() {
+FFMediaFile::~FFMediaFile() {
   assert(context == nullptr);
 
   free(this->path);
 }
 
-int FFVideoFile::numberOfStreams() {
+int FFMediaFile::numberOfStreams() {
   return context->nb_streams;
 }
 
-lms::StreamMeta FFVideoFile::getStreamMeta(size_t streamIndex) {
+lms::StreamMeta FFMediaFile::getStreamMeta(size_t streamIndex) {
   lms::StreamMeta meta;
   
   if (streamIndex < context->nb_streams) {
@@ -35,7 +35,7 @@ lms::StreamMeta FFVideoFile::getStreamMeta(size_t streamIndex) {
   return meta;
 }
 
-int FFVideoFile::open() {
+int FFMediaFile::open() {
   LMSLogDebug("source=%p", this);
   
   int rt = 0;
@@ -56,7 +56,7 @@ int FFVideoFile::open() {
   return 0;
 }
 
-void FFVideoFile::close() {
+void FFMediaFile::close() {
   LMSLogDebug("source=%p", this);
 
   lms::mainQueue()->cancel(this);
@@ -64,7 +64,7 @@ void FFVideoFile::close() {
   avformat_close_input(&context);
 }
 
-void FFVideoFile::loadPackets(int numberRequested) {
+void FFMediaFile::loadPackets(int numberRequested) {
   LMSLogVerbose("numberRequested=%d", numberRequested);
     
   // TODO: 使用独立的queue来加载数据

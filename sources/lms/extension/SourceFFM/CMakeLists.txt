@@ -10,6 +10,6 @@ target_include_directories(SourceFFM
 
 target_sources(SourceFFM
   PRIVATE
-    FFVideoFile.h
-    FFVideoFile.cpp
+    FFMediaFile.h
+    FFMediaFile.cpp
 )

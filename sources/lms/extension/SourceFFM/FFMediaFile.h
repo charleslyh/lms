@@ -5,10 +5,10 @@ extern "C" {
 #include <libavformat/avformat.h>
 }
 
-class FFVideoFile : public lms::MediaSource {
+class FFMediaFile : public lms::MediaSource {
 public:
-  FFVideoFile(const char *path);
-  ~FFVideoFile() override;
+  FFMediaFile(const char *path);
+  ~FFMediaFile() override;
 
   int numberOfStreams() override;
   lms::StreamMeta getStreamMeta(size_t streamIndex) override;

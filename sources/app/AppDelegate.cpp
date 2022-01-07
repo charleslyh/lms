@@ -1,7 +1,7 @@
 #include <lms/LMS.h>
 #include <extension/RuntimeSDL/SDLApplication.h>
 #include <extension/RuntimeSDL/SDLView.h>
-#include <extension/SourceFFM/FFVideoFile.h>
+#include <extension/SourceFFM/FFMediaFile.h>
 
 class PlayerAppDelegate: public SDLAppDelegate {
 public:  
@@ -12,7 +12,7 @@ public:
     // 设置日志过滤等级，一般默认为Info，但在调试场景下，可以使用Verbose来获取更完备的信息
     lms::setLogLevel(lms::LogLevelVerbose);
 
-    auto src = new FFVideoFile(argv[1]);
+    auto src = new FFMediaFile(argv[1]);
     auto view = new SDLView;
 
     player = new lms::Player(src, view);

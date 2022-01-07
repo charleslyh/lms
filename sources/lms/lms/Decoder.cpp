@@ -101,21 +101,6 @@ private:
     return rt == 0 || rt == AVERROR(EAGAIN);
   }
   
-  static int decodingThreadProc(FFMDecoder *self) {
-    while(true) {
-      SDL_SemWait(self->sem);
-      if (!self->decoding) {
-        break;
-      }
-      
-      if (!self->tryDecodeFrame()) {
-        break;
-      }
-    }
-    
-    return 0;
-  }
-
 private:
   AVStream *stream;
   AVCodecParameters *params;
@@ -124,18 +109,13 @@ private:
   
   std::list<AVPacket *> packets;
   SDL_mutex            *packetsMutex;
-  SDL_sem              *sem;
-  SDL_Thread           *thread;
-  bool                 decoding;
   void                 *obsSLNF;  // event observer: "should_load_next_frame"
 };
 
 void FFMDecoder::start() {
   LMSLogInfo("Start decoder | stream:%d, type:%d", stream->index, stream->codecpar->codec_type);
   
-  thread       = nullptr;
   packetsMutex = SDL_CreateMutex();
-  sem          = SDL_CreateSemaphore(0);
 
   int rt = avcodec_open2(codecContext, codec, 0);
   if (rt != 0) {
@@ -148,28 +128,20 @@ void FFMDecoder::start() {
     
     // 仅当发起方为对应流时，才应该激活解码处理，否则可能会提前解码数据帧
     if (streamObject == this->stream) {
-      SDL_SemPost(this->sem);
+      tryDecodeFrame();
     }
   });
-  
-  const char *tname = params->codec_type == AVMEDIA_TYPE_VIDEO ? "DecodeVideo" : "DecodeAudio";
-  decoding = true;
-  thread   = SDL_CreateThread((SDL_ThreadFunction)FFMDecoder::decodingThreadProc, tname, this);
 }
 
 void FFMDecoder::stop() {
   LMSLogInfo("Start decoder | stream:%d, type:%d", stream->index, stream->codecpar->codec_type);
 
-  // 终止解码线程
-  decoding = false;
-  SDL_SemPost(sem);
-  SDL_WaitThread(thread, nullptr);
+  mainQueue()->cancel(this);
 
   // 需要在destroySemaphore前进行移除
   removeEventObserver(obsSLNF);
 
   SDL_DestroyMutex(packetsMutex);
-  SDL_DestroySemaphore(sem);
 
   avcodec_close(codecContext);
 }
