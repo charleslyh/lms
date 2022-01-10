@@ -6,7 +6,7 @@ namespace lms {
 
 class MediaSource;
 class Stream;
-class Coordinator;
+class SourceDriver;
 class Cell;
 class TimeSync;
 
@@ -19,11 +19,11 @@ public:
   void stop();
 
 private:
-  MediaSource *mediaSource;
+  MediaSource *source;
 
   Stream *vstream;
   Cell   *vrender;
-  Coordinator *coordinator;
+  SourceDriver *coordinator;
 
   Stream *astream;
   TimeSync *timesync;

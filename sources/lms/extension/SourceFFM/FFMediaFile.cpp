@@ -2,6 +2,7 @@
 #include <lms/MediaSource.h>
 #include <lms/Logger.h>
 #include <lms/Runtime.h>
+#include <lms/Events.h>
 
 
 FFMediaFile::FFMediaFile(const char *path) {
@@ -53,45 +54,53 @@ int FFMediaFile::open() {
   }
   
   av_dump_format(context, 0, path, 0);
+  
+  obsLP = lms::addEventObserver("load_packets", nullptr, [this] (const char *nm, void *sender, const lms::EventParams& p) {
+    uint32_t count = lms::variantsGetInt(p, "count");
+    loadPackets(count);
+  });
+  
   return 0;
 }
 
 void FFMediaFile::close() {
   LMSLogDebug("source=%p", this);
+  
+  lms::removeEventObserver(obsLP);
 
   lms::mainQueue()->cancel(this);
 
   avformat_close_input(&context);
 }
 
-void FFMediaFile::loadPackets(int numberRequested) {
-  LMSLogVerbose("numberRequested=%d", numberRequested);
+void FFMediaFile::loadPackets(int count) {
+  LMSLogVerbose("loadPackets: count=%d", count);
     
   // TODO: 使用独立的queue来加载数据
-  async(lms::mainQueue(), this, [this, numberRequested] {
-    for (int i = 0; i< numberRequested; i += 1) {
-      AVPacket *avpkt = av_packet_alloc();
-      int rt = av_read_frame(context, avpkt);
+  async(lms::mainQueue(), this, [this, count] {
+    AVPacket pkt;
+    
+    for (int i = 0; i< count; i += 1) {
+      int rt = av_read_frame(context, &pkt);
+      
       if (rt >= 0) {
         LMSLogVerbose("Loaded: st=%d, flags=0x%-2x, dts=%" PRIu64
                       ", pts=%" PRIu64 ", dur=%" PRIu64 ", sz=%-6d",
-                      avpkt->stream_index,
-                      avpkt->flags,
-                      avpkt->dts,
-                      avpkt->pts,
-                      avpkt->duration,
-                      avpkt->size);
+                      pkt.stream_index,
+                      pkt.flags,
+                      pkt.dts,
+                      pkt.pts,
+                      pkt.duration,
+                      pkt.size);
         
         lms::PipelineMessage msg;
         msg["type"]          = "media_packet";
-        msg["stream_object"] = context->streams[avpkt->stream_index];
-        msg["packet_object"] = avpkt;
+        msg["stream_object"] = context->streams[pkt.stream_index];
+        msg["packet_object"] = &pkt;
         this->deliverPacketMessage(msg);
-
-        av_packet_unref((AVPacket *)avpkt);
-      } else {
-        av_packet_free(&avpkt);
       }
+
+      av_packet_unref(&pkt);
     }
   });
 }

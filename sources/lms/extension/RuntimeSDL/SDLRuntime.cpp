@@ -7,6 +7,7 @@ extern "C" {
 #include <cmath>
 
 static Uint32 RunnableEvent;
+static SDL_threadID _sdlMainThreadId;
 
 SDLApplication::SDLApplication(int argc, char **argv) {
   if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
@@ -19,6 +20,8 @@ SDLApplication::SDLApplication(int argc, char **argv) {
 }
 
 void SDLApplication::run(SDLAppDelegate *delegate) {
+  _sdlMainThreadId = SDL_ThreadID();
+  
   RunnableEvent = SDL_RegisterEvents(1);
 
   delegate->didFinishLaunchingApplication(argc, argv);
@@ -144,8 +147,15 @@ public:
     SDL_DestroyMutex(mtx);
   }
   
+  bool isMainThread() override {
+    SDL_threadID tid = SDL_ThreadID();
+    return tid == _sdlMainThreadId;
+  }
+  
   void enqueue(void *sender, lms::Runnable *runnable) override {
     LMSLogDebug("sender=%p, runnable=%p", sender, runnable);
+    
+    runnable->enqueueTS = SDL_GetTicks();
     
     lms::retain(runnable);
 
@@ -162,19 +172,31 @@ public:
   }
   
   void scheduleOnce() override {
+    void     *s = nullptr;
+    Runnable *r = nullptr;
+
     SDL_LockMutex(mtx);
     {
       if (!items.empty()) {
         auto item = items.front();
         items.pop_front();
 
-        LMSLogDebug("sender=%p, runnable=%p", item.first, item.second);
-
-        item.second->run();
-        lms::release(item.second);
+        s = item.first;
+        r = item.second;
       }
     }
     SDL_UnlockMutex(mtx);
+    
+    if (r == nullptr) {
+      return;
+    }
+    
+    // 避免在lock范围内进行函数调用，否则可能会导致死锁
+    uint32_t delay = SDL_GetTicks() - r->enqueueTS;
+    LMSLogDebug("Schedule runnalbe: s=%p, r=%p, d=%d", s, r, delay);
+
+    r->run();
+    lms::release(r);
   }
   
   void cancel(void *sender) override {
@@ -186,7 +208,7 @@ public:
         if (sender == nullptr || item.first == sender) {
           lms::release(item.second);
           
-          LMSLogDebug("Canceled runnable: sender=%p, runnable=%p", item.first, item.second);
+          LMSLogDebug("Cancel runnable: s=%p, r=%p", item.first, item.second);
           return true;
         } else {
           return false;

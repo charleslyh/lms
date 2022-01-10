@@ -6,6 +6,7 @@
 //
 
 #include "Cell.h"
+#include "Runtime.h"
 
 namespace lms {
 
@@ -20,7 +21,7 @@ void Cell::removeReceiver(Cell *receiver) {
 }
 
 void Cell::deliverPipelineMessage(const PipelineMessage& cmsg) {
-  // TODO: ASSERT(is lms main thread)
+  assert(isMainThread());
   
   for (auto r : receivers) {
     r->didReceivePipelineMessage(cmsg);

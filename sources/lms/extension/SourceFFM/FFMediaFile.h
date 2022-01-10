@@ -21,4 +21,5 @@ public:
 private:
   char *path;
   AVFormatContext *context;
+  void *obsLP;
 };

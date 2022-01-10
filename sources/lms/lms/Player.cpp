@@ -483,13 +483,13 @@ private:
   RenderDriver *renderDriver;
 };
 
-class Coordinator : virtual public Object {
+class SourceDriver : virtual public Object {
 public:
-  Coordinator(MediaSource *source) {
+  SourceDriver(MediaSource *source) {
     this->source = lms::retain(source);
   }
   
-  ~Coordinator() {
+  ~SourceDriver() {
     lms::release(source);
   }
 
@@ -509,15 +509,19 @@ public:
   }
   
 private:
-  static void onEventDidUpdatePackets(Coordinator *self, const char *ename, void *sender, const EventParams& p) {
+  static void onEventDidUpdatePackets(SourceDriver *self, const char *ename, void *sender, const EventParams& p) {
     int type  = variantsGetUInt(p, "type");
     int dec   = variantsGetUInt(p, "decrement");
     
-    if (type == 2 /* decrement */ && dec > 0) {
+    /* 当packets缓存减少时 */
+    if (type == 2 && dec > 0) {
       self->source->loadPackets(dec);
+//      fireEvent("load_packets", self, {
+//        { "count", (uint64_t)dec }
+//      });
     }
   }
-  
+
 private:
   MediaSource *source;
   void        *obsDUP;
@@ -525,9 +529,9 @@ private:
 
 
 Player::Player(MediaSource *mediaSource, Cell *vrender) {
-  this->mediaSource = lms::retain(mediaSource);
+  this->source = lms::retain(mediaSource);
   this->vrender     = lms::retain(vrender);
-  this->coordinator = new Coordinator(mediaSource);
+  this->coordinator = new SourceDriver(mediaSource);
   this->timesync    = new TimeSync;
   this->vstream     = nullptr;
   this->astream     = nullptr;
@@ -539,7 +543,7 @@ Player::~Player() {
 
   lms::release(coordinator);
   lms::release(timesync);
-  lms::release(mediaSource);
+  lms::release(source);
   lms::release(vrender);
 }
 
@@ -547,16 +551,16 @@ void Player::play() {
   LMSLogInfo(nullptr);
 
   // 必须先加载source的数据才能获取当中的元信息
-  if (mediaSource->open() != 0) {
+  if (source->open() != 0) {
     return;
   }
   
   RenderDriver *theDriver = nullptr;
 
-  auto nbStreams = mediaSource->numberOfStreams();
+  auto nbStreams = source->numberOfStreams();
   int  streamId = -1;
   for (int i = 0; i < nbStreams; i += 1) {
-    auto meta   = mediaSource->getStreamMeta(i);
+    auto meta   = source->getStreamMeta(i);
     auto mtype  = meta.at("media_type").value.u;
     auto stream = (AVStream *)meta.at("stream_object").value.ptr;
 
@@ -597,12 +601,12 @@ void Player::play() {
   timesync->updateTimePivot(InvalidPlayingTime);
   
   if (vstream) {
-    mediaSource->addReceiver(vstream);
+    source->addReceiver(vstream);
     vstream->start();
   }
   
   if (astream) {
-    mediaSource->addReceiver(astream);
+    source->addReceiver(astream);
     astream->start();
   }
   
@@ -616,15 +620,15 @@ void Player::stop() {
   
   if (astream) {
     astream->stop();
-    mediaSource->removeReceiver(astream);
+    source->removeReceiver(astream);
   }
   
   if (vstream) {
     vstream->stop();
-    mediaSource->removeReceiver(vstream);
+    source->removeReceiver(vstream);
   }
 
-  mediaSource->close();
+  source->close();
 
   lms::release(vstream);
   vstream = nullptr;

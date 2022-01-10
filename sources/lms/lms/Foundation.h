@@ -102,6 +102,10 @@ struct Variant : virtual public Object {
     value.c = val;
   }
   
+  Variant(int val) : Variant((uint64_t)val) {}
+  
+  Variant(long val) : Variant((uint64_t)val) {}
+  
   Variant(int64_t val) {
     construct(Int);
     value.i = val;

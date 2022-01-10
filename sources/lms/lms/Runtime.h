@@ -24,6 +24,8 @@ public:
    任务的执行接口
    */
   virtual void run() = 0;
+  
+  uint32_t enqueueTS;
 };
 
 class LambdaRunnable : public Runnable {
@@ -59,9 +61,13 @@ public:
   virtual void cancel(void *sender) = 0;
   
   virtual void scheduleOnce() = 0;
+  
+  virtual bool isMainThread() = 0;
 };
 
 DispatchQueue *mainQueue();
+
+bool isMainThread();
 
 // TODO: 既然业务能拿到DispatchQueue实例，为什么还需要下面两个方法？swift中的API是怎样的？
 void async(DispatchQueue *queue, void *sender, Runnable *runnable);

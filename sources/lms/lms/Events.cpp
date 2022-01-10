@@ -33,49 +33,32 @@ struct EventObserver {
 
 class EventCenter {
 public:
-  EventCenter() {
-    mtx = SDL_CreateMutex();
-  }
-  
-  ~EventCenter() {
-    SDL_DestroyMutex(mtx);
-  }
-  
   void addObserver(EventObserver *o) {
-    SDL_LockMutex(mtx);
-    {
-      observers.push_back(o);
-    }
-    SDL_UnlockMutex(mtx);
+    assert(mainQueue());
+    observers.push_back(o);
   }
   
   void removeObserver(EventObserver *o) {
-    SDL_LockMutex(mtx);
-    {
-      observers.remove(o);
-    }
-    SDL_UnlockMutex(mtx);    
+    observers.remove(o);
   }
   
-  void fire(const char *name, void *sender, const EventParams& params) {
-    std::list<EventObserver *> cpy;
-    
-    SDL_LockMutex(mtx);
-    {
-      cpy = observers;
-    }
-    SDL_UnlockMutex(mtx);
+  void dispatchEvent(const char *name, void *sender, const EventParams& params) {
+    std::string nm = name;
+    async(mainQueue(), this, [this, nm, sender, params] () {
+      fire(nm.c_str(), sender, params);
+    });
+  }
 
-    for (auto o : cpy) {
+  std::list<EventObserver *> observers;
+
+private:
+  void fire(const char *name, void *sender, const EventParams& params) {
+    for (auto o : observers) {
       if (strcmp(name, o->name) == 0 && (o->sender == nullptr || o->sender == sender)) {
         o->handler->handleEvent(name, sender, params);
       }
     }
   }
-  
-private:
-  std::list<EventObserver *> observers;
-  SDL_mutex *mtx;
 };
 
 static EventCenter *_eventCenter;
@@ -137,7 +120,7 @@ void removeEventObserver(void *observer) {
 }
 
 void fireEvent(const char *name, void *sender, const EventParams& params) {
-  _eventCenter->fire(name, sender, params);
+  _eventCenter->dispatchEvent(name, sender, params);
 }
 
 // ---
@@ -147,6 +130,10 @@ static void setupEventCenter() {
 }
 
 static void teardownEventCenter() {
+  assert(_eventCenter->observers.empty());
+  
+  mainQueue()->cancel(&_eventCenter);
+  
   delete _eventCenter;
   _eventCenter = nullptr;
 }

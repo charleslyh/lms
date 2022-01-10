@@ -27,6 +27,10 @@ DispatchQueue *mainQueue() {
   return _mainQueue;
 }
 
+bool isMainThread() {
+  return _mainQueue->isMainThread();
+}
+
 void async(DispatchQueue *queue, void *sender, Runnable *runnable) {
   queue->enqueue(sender, runnable);
 }

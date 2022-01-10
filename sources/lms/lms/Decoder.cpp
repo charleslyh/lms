@@ -57,7 +57,59 @@ private:
     }
   }
   
+  void notifyPacketsUpdated(uint64_t type) {
+    EventParams p = {
+      { "stream_object", stream },
+      { "type"         , type   },
+      { "count"        , (uint64_t)packets.size() },
+    };
+    
+    if (type == 1) {
+      p["increment"] = 1;
+    } else if (type == 2) {
+      p["decrement"] = decrements;
+      decrements = 0;
+    }
+    
+    fireEvent("did_update_packets", this, p);
+  }
+  
+  void pushPacket(AVPacket *packet) {
+    packets.push_back(packet);
+       
+    LMSLogVerbose("Push packet: type=%s, stream:%d, count=%u",
+                  _media_type_name(stream->codecpar->codec_type), stream->index, (uint32_t)packets.size());
+  }
+  
+  AVPacket *popPacket() {
+    AVPacket *packet = nullptr;
+
+    if (!packets.empty()) {
+      packet = packets.front();
+      packets.pop_front();
+    }
+    
+    decrements += 1;
+    if (decrements >=10) {
+      notifyPacketsUpdated(2);
+    }
+    
+    LMSLogVerbose("Pop packet: type=%s, stream:%d, count=%u",
+                  _media_type_name(stream->codecpar->codec_type), stream->index, (uint32_t)packets.size());
+
+    return packet;
+  }
+  
+  void refillPacket(AVPacket *packet) {
+    packets.push_front(packet);
+
+    LMSLogVerbose("Refill packet: type=%s, stream:%d, count=%u",
+                  _media_type_name(stream->codecpar->codec_type), stream->index, (uint32_t)packets.size());
+  }
+  
   void decodeFrame() {
+    assert(isMainThread());
+
     AVFrame frame = {0};
 
     int rt = 0;
@@ -67,35 +119,8 @@ private:
       if (rt == 0) {
         break;
       } else if (rt == AVERROR(EAGAIN)) {
-        AVPacket *avpkt = nullptr;
+        AVPacket *avpkt = popPacket();
 
-        int count = 0;
-        SDL_LockMutex(packetsMutex);
-        {
-          if (!packets.empty()) {
-            avpkt = packets.front();
-            packets.pop_front();
-            
-            LMSLogVerbose("Packtes remain: type=%s, stream:%d, count=%u",
-                          _media_type_name(stream->codecpar->codec_type), stream->index, (uint32_t)packets.size());
-          }
-
-          count = packets.size();
-        }
-        SDL_UnlockMutex(packetsMutex);
-        
-        if (avpkt) {
-          fireEvent("did_update_packets", this, {
-            { "stream_object", stream      },
-            { "type"         , (uint64_t)2 }, /* decrement */
-            { "count"        , (uint64_t)packets.size() },
-            { "decrement"    , (uint64_t)1 },
-          });
-          
-          cachingDuration -= avpkt->duration;
-          double dt = cachingDuration * av_q2d(stream->time_base);
-          LMSLogDebug("Duration changed: type=%s, dur=%lf", _media_type_name(stream->codecpar->codec_type), dt);        }
-        
         if (avpkt == nullptr) {
           rt = AVERROR(EAGAIN);
           break;
@@ -103,23 +128,7 @@ private:
 
         rt = avcodec_send_packet(codecContext, avpkt);
         if (rt == AVERROR(EAGAIN)) {
-          SDL_LockMutex(packetsMutex);
-          {
-            packets.push_front(avpkt);
-            
-            fireEvent("did_update_packets", this, {
-              { "stream_object", stream      },
-              { "type"         , (uint64_t)1 }, /* increment */
-              { "count"        , (uint64_t)packets.size() },
-              { "increment"    , (uint64_t)1 },
-            });
-          }
-          
-          cachingDuration += avpkt->duration;
-          double dt = cachingDuration * av_q2d(stream->time_base);
-          LMSLogDebug("Duration changed: type=%s, dur=%lf", _media_type_name(stream->codecpar->codec_type), dt);
-
-          SDL_UnlockMutex(packetsMutex);
+          refillPacket(avpkt);
         } else {
           // 该数据包已被正常消耗，应进行释放
           av_packet_free(&avpkt);
@@ -135,8 +144,6 @@ private:
     } while (true);
     
     if (rt == 0) {
-
-      
       uint32_t now = SDL_GetTicks();
       LMSLogDebug("Frame decoded: type=%s, stream:%d, pts=%" PRIi64,
                   _media_type_name(stream->codecpar->codec_type), stream->index, frame.pts);
@@ -157,17 +164,15 @@ private:
   AVCodecContext *codecContext;
   AVCodec *codec;
   
+  int                   decrements;
   int64_t               cachingDuration;
   std::list<AVPacket *> packets;
-  SDL_mutex            *packetsMutex;
   void                 *obsSLNF;  // event observer: "should_load_next_frame"
 };
 
 void FFMDecoder::start() {
   LMSLogInfo("Start decoder | stream:%d, type:%d", stream->index, stream->codecpar->codec_type);
   
-  packetsMutex = SDL_CreateMutex();
-
   int rt = avcodec_open2(codecContext, codec, 0);
   if (rt != 0) {
     LMSLogError("Couldn't open codec: %d", rt);
@@ -176,13 +181,8 @@ void FFMDecoder::start() {
   
   obsSLNF = addEventObserver("should_load_next_frame", nullptr, this, (EventCallback)onShouldLoadNextFrame);
   
-  fireEvent("did_update_packets", this, {
-    { "stream_object", stream      },
-    { "type"         , (uint64_t)0 }, /* initial */
-    { "count"        , (uint64_t)0 },
-  });
-
-  cachingDuration = 0;
+  decrements = 0;
+  notifyPacketsUpdated(0);
 }
 
 void FFMDecoder::stop() {
@@ -193,37 +193,16 @@ void FFMDecoder::stop() {
   // 需要在destroySemaphore前进行移除
   removeEventObserver(obsSLNF);
 
-  SDL_DestroyMutex(packetsMutex);
-
   avcodec_close(codecContext);
 }
 
 void FFMDecoder::didReceivePipelineMessage(const PipelineMessage& msg) {
+  assert(isMainThread());
+  
   auto srcpkt = (AVPacket *)msg.at("packet_object").value.ptr;
-  assert(srcpkt != nullptr);
-  
-  size_t count = 0;
-  SDL_LockMutex(packetsMutex);
-  {
-    // 由于下面的解码过程可能会被异步调度（延迟）处理，为了避免在函数‘立即’返回后，pkt资源被释放
-    // 这里对pkt进行了一次人为clone
-    AVPacket *avpkt = av_packet_clone(srcpkt);
-    packets.push_back(avpkt);
-    
-    count = packets.size();
-  }
-  SDL_UnlockMutex(packetsMutex);
-
-  fireEvent("did_update_packets", this, {
-    { "stream_object", stream      },
-    { "type"         , (uint64_t)1 }, /* increment */
-    { "count"        , (uint64_t)count },
-    { "increment"    , (uint64_t)1 },
-  });
-  
-  cachingDuration += srcpkt->duration;
-  double dt = cachingDuration * av_q2d(stream->time_base);
-  LMSLogDebug("Duration changed: type=%s, dur=%lf", _media_type_name(stream->codecpar->codec_type), dt);
+  AVPacket *avpkt = av_packet_clone(srcpkt);
+  assert(avpkt != nullptr);
+  pushPacket(avpkt);
 }
 
 Cell *createDecoder(const StreamMeta& meta) {
