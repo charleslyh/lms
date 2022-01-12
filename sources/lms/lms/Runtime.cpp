@@ -12,23 +12,12 @@ namespace lms {
 
 static DispatchQueue *_mainQueue;
 
-/*
- @function createDispatchQueue
- 创建一个DispatchQueue实例
- 
- @param name 队列名称，如果队列会创建一个新线程，则该线程会使用该名称作为线程名
-
- @discuss
- 需要在外部扩展模块中实现该方法，并链如主程序
-*/
-extern DispatchQueue *createDispatchQueue(const char *name);
-
 DispatchQueue *mainQueue() {
   return _mainQueue;
 }
 
 bool isMainThread() {
-  return _mainQueue->isMainThread();
+  return _mainQueue->isHostThread();
 }
 
 void async(DispatchQueue *queue, void *sender, Runnable *runnable) {
@@ -38,6 +27,16 @@ void async(DispatchQueue *queue, void *sender, Runnable *runnable) {
 void async(DispatchQueue *queue, void *sender, std::function<void()> action) {
   auto r = new LambdaRunnable(action);
   queue->async(sender, r);
+  lms::release(r);
+}
+
+void sync(DispatchQueue *queue, Runnable *r) {
+  queue->sync(r);
+}
+
+void sync(DispatchQueue *queue, std::function<void()> action) {
+  auto r = new LambdaRunnable(action);
+  queue->sync(r);
   lms::release(r);
 }
 

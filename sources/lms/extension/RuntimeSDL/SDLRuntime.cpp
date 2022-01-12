@@ -28,7 +28,7 @@ public:
     SDL_DestroyMutex(mtx);
   }
   
-  bool isMainThread() override {
+  bool isHostThread() override {
     SDL_threadID tid = SDL_ThreadID();
     return tid == _sdlMainThreadId;
   }
@@ -53,11 +53,67 @@ public:
   }
   
   void sync(lms::Runnable *runnable) override {
-    // TODO:
+    runnable->enqueueTS = SDL_GetTicks();
+
+    class Synchronizer : public lms::Runnable {
+    public:
+      Synchronizer(lms::Runnable *r) {
+        this->r   = lms::retain(r);
+        this->sem = SDL_CreateSemaphore(0);
+      }
+      
+      ~Synchronizer() {
+        lms::release(r);
+        SDL_DestroySemaphore(sem);
+      }
+      
+      void wait() {
+        SDL_SemWait(sem);
+      }
+
+      void run() override {
+        r->run();
+        SDL_SemPost(sem);
+      }
+      
+      SDL_semaphore *sem;
+      lms::Runnable *r;
+    };
+    
+    if (isHostThread()) {
+      // items的消费过程可能会产生新的runnable，所以不能直接在items队列中进行消费
+      
+      auto cpy = items;
+      items = {};
+      
+      for (auto i : items) {
+        launch(i.second, true);
+      }
+
+      launch(runnable, false);
+    } else {
+      auto sync = new Synchronizer(runnable);
+      async(this, sync);
+      sync->wait();
+      lms::release(sync);
+    }
+  }
+  
+  void launch(lms::Runnable *r, bool autoRelease) {
+    uint32_t now = SDL_GetTicks();
+    uint32_t delay = now - r->enqueueTS;
+
+    r->run();
+    if (autoRelease) {
+      lms::release(r);
+    }
+
+    uint32_t cost = SDL_GetTicks() - now;
+    LMSLogDebug("Launch runnalbe: r=%p, d=%-3d, c=%d", r, delay, cost);
   }
   
   void scheduleOnce() {
-    void     *s = nullptr;
+    void *s = nullptr;
     lms::Runnable *r = nullptr;
 
     SDL_LockMutex(mtx);
@@ -77,14 +133,7 @@ public:
     }
     
     // 避免在lock范围内进行函数调用，否则可能会导致死锁
-    uint32_t now = SDL_GetTicks();
-    uint32_t delay = now - r->enqueueTS;
-
-    r->run();
-    lms::release(r);
-
-    uint32_t cost = SDL_GetTicks() - now;
-    LMSLogDebug("Launch runnalbe: s=%p, r=%p, delay=%-3d, cost=%d", s, r, delay, cost);
+    launch(r, true);
   }
   
   void cancel(void *sender) override {

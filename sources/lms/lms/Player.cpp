@@ -549,6 +549,18 @@ Player::~Player() {
 }
 
 void Player::play() {
+  sync(mainQueue(), [this] {
+    doPlay();
+  });
+}
+
+void Player::stop() {
+  sync(mainQueue(), [this] {
+    doStop();
+  });
+}
+
+void Player::doPlay() {
   LMSLogInfo(nullptr);
 
   // 必须先加载source的数据才能获取当中的元信息
@@ -614,7 +626,7 @@ void Player::play() {
   coordinator->start();
 }
 
-void Player::stop() {
+void Player::doStop() {
   LMSLogInfo(nullptr);
   
   coordinator->stop();

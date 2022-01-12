@@ -17,6 +17,10 @@ public:
   
   void play();
   void stop();
+  
+private:
+  void doPlay();
+  void doStop();
 
 private:
   MediaSource *source;

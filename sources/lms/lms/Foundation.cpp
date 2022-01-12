@@ -41,6 +41,10 @@ public:
     SDL_UnlockMutex(mtx);
   }
   
+  std::list<std::string>& get(Object *obj) {
+    return traces.at(obj);
+  }
+  
   void mark(Object *obj, const char *type, int offset) {
     SDL_LockMutex(mtx);
     {
