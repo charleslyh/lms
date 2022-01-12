@@ -23,14 +23,15 @@ public:
   virtual int numberOfStreams() = 0;
   virtual StreamMeta getStreamMeta(size_t streamIndex) = 0;
 
-  virtual void loadPackets(int numberRequested) = 0;
-
 public:
   void addReceiver(Cell *receiver);
   void removeReceiver(Cell *receiver);
 
 protected:
   void deliverPacketMessage(const PipelineMessage& msg);
+
+private:
+  void loadPackets(int numberRequested);
 
 private:
   std::list<Cell *> receivers;

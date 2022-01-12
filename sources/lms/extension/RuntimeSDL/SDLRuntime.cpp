@@ -9,6 +9,108 @@ extern "C" {
 static Uint32 RunnableEvent;
 static SDL_threadID _sdlMainThreadId;
 
+
+class SDLMainQueue : public lms::DispatchQueue {
+public:
+  SDLMainQueue() {
+    mtx = SDL_CreateMutex();
+  }
+  
+  ~SDLMainQueue() {
+    if (!items.empty()) {
+      LMSLogError("Should contains no runnable!");
+      
+      for (auto i : items) {
+        LMSLogWarning("Exceptional runnable: sender=%p, runnable=%p", i.first, i.second);
+      }
+    }
+    
+    SDL_DestroyMutex(mtx);
+  }
+  
+  bool isMainThread() override {
+    SDL_threadID tid = SDL_ThreadID();
+    return tid == _sdlMainThreadId;
+  }
+  
+  void async(void *sender, lms::Runnable *runnable) override {
+    LMSLogDebug("Enqueue runnable: s=%p, r=%p", sender, runnable);
+    
+    runnable->enqueueTS = SDL_GetTicks();
+    
+    lms::retain(runnable);
+
+    SDL_LockMutex(mtx);
+    items.push_back(std::make_pair(sender, runnable));
+    SDL_UnlockMutex(mtx);
+    
+    SDL_Event event;
+    SDL_zero(event);
+    event.type       = RunnableEvent;
+    event.user.data1 = this;
+    event.user.code  = 0;
+    SDL_PushEvent(&event);
+  }
+  
+  void sync(lms::Runnable *runnable) override {
+    // TODO:
+  }
+  
+  void scheduleOnce() {
+    void     *s = nullptr;
+    lms::Runnable *r = nullptr;
+
+    SDL_LockMutex(mtx);
+    {
+      if (!items.empty()) {
+        auto item = items.front();
+        items.pop_front();
+
+        s = item.first;
+        r = item.second;
+      }
+    }
+    SDL_UnlockMutex(mtx);
+    
+    if (r == nullptr) {
+      return;
+    }
+    
+    // 避免在lock范围内进行函数调用，否则可能会导致死锁
+    uint32_t now = SDL_GetTicks();
+    uint32_t delay = now - r->enqueueTS;
+
+    r->run();
+    lms::release(r);
+
+    uint32_t cost = SDL_GetTicks() - now;
+    LMSLogDebug("Launch runnalbe: s=%p, r=%p, delay=%-3d, cost=%d", s, r, delay, cost);
+  }
+  
+  void cancel(void *sender) override {
+    LMSLogDebug("Cancel runnables: s=%p", sender);
+    
+    SDL_LockMutex(mtx);
+    {
+      items.remove_if([this, sender] (const std::pair<void *, lms::Runnable *>& item) {
+        if (sender == nullptr || item.first == sender) {
+          lms::release(item.second);
+          
+          LMSLogDebug("Cancel runnable: s=%p, r=%p", item.first, item.second);
+          return true;
+        } else {
+          return false;
+        }
+      });
+    }
+    SDL_UnlockMutex(mtx);
+  }
+  
+private:
+  SDL_mutex *mtx;
+  std::list<std::pair<void *, lms::Runnable *>> items;
+};
+
 SDLApplication::SDLApplication(int argc, char **argv) {
   if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
     LMSLogError("Can't initialize SDL: %s", SDL_GetError());
@@ -34,7 +136,7 @@ void SDLApplication::run(SDLAppDelegate *delegate) {
     }
 
     if (event.type == RunnableEvent) {
-      auto queue = (lms::DispatchQueue *)event.user.data1;
+      auto queue = (SDLMainQueue *)event.user.data1;
       queue->scheduleOnce();
     }
   }
@@ -128,100 +230,6 @@ void invalidateTimer(Timer *t) {
   
   SDL_WaitThread(timer->thread, nullptr);  
 }
-
-class SDLMainQueue : public DispatchQueue {
-public:
-  SDLMainQueue() {
-    mtx = SDL_CreateMutex();
-  }
-  
-  ~SDLMainQueue() {
-    if (!items.empty()) {
-      LMSLogError("Should contains no runnable!");
-      
-      for (auto i : items) {
-        LMSLogWarning("Exceptional runnable: sender=%p, runnable=%p", i.first, i.second);
-      }
-    }
-    
-    SDL_DestroyMutex(mtx);
-  }
-  
-  bool isMainThread() override {
-    SDL_threadID tid = SDL_ThreadID();
-    return tid == _sdlMainThreadId;
-  }
-  
-  void enqueue(void *sender, lms::Runnable *runnable) override {
-    LMSLogDebug("sender=%p, runnable=%p", sender, runnable);
-    
-    runnable->enqueueTS = SDL_GetTicks();
-    
-    lms::retain(runnable);
-
-    SDL_LockMutex(mtx);
-    items.push_back(std::make_pair(sender, runnable));
-    SDL_UnlockMutex(mtx);
-    
-    SDL_Event event;
-    SDL_zero(event);
-    event.type       = RunnableEvent;
-    event.user.data1 = this;
-    event.user.code  = 0;
-    SDL_PushEvent(&event);
-  }
-  
-  void scheduleOnce() override {
-    void     *s = nullptr;
-    Runnable *r = nullptr;
-
-    SDL_LockMutex(mtx);
-    {
-      if (!items.empty()) {
-        auto item = items.front();
-        items.pop_front();
-
-        s = item.first;
-        r = item.second;
-      }
-    }
-    SDL_UnlockMutex(mtx);
-    
-    if (r == nullptr) {
-      return;
-    }
-    
-    // 避免在lock范围内进行函数调用，否则可能会导致死锁
-    uint32_t delay = SDL_GetTicks() - r->enqueueTS;
-    LMSLogDebug("Schedule runnalbe: s=%p, r=%p, d=%d", s, r, delay);
-
-    r->run();
-    lms::release(r);
-  }
-  
-  void cancel(void *sender) override {
-    LMSLogDebug("sender=%p", sender);
-    
-    SDL_LockMutex(mtx);
-    {
-      items.remove_if([this, sender] (const std::pair<void *, lms::Runnable *>& item) {
-        if (sender == nullptr || item.first == sender) {
-          lms::release(item.second);
-          
-          LMSLogDebug("Cancel runnable: s=%p, r=%p", item.first, item.second);
-          return true;
-        } else {
-          return false;
-        }
-      });
-    }
-    SDL_UnlockMutex(mtx);
-  }
-  
-private:
-  SDL_mutex *mtx;
-  std::list<std::pair<void *, lms::Runnable *>> items;
-};
 
 DispatchQueue *createDispatchQueue(const char *name) {
   return new SDLMainQueue();

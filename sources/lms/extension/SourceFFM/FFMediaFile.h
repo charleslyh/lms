@@ -16,9 +16,9 @@ public:
   int open() override;
   void close() override;
 
-  void loadPackets(int numberRequested) override;
-
 private:
+  void loadPackets(int numberRequested);
+  
   char *path;
   AVFormatContext *context;
   void *obsLP;

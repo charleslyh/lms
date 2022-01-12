@@ -498,7 +498,10 @@ public:
     LMSLogInfo("Start coordinator");
 
     obsDUP = addEventObserver("did_update_packets", nullptr, this, (EventCallback)onEventDidUpdatePackets);
-    source->loadPackets(100);
+    
+    fireEvent("load_packets", this, {
+      { "count", 100 }
+    });
   }
   
   void stop() {
@@ -513,12 +516,10 @@ private:
     int type  = variantsGetUInt(p, "type");
     int dec   = variantsGetUInt(p, "decrement");
     
-    /* 当packets缓存减少时 */
     if (type == 2 && dec > 0) {
-      self->source->loadPackets(dec);
-//      fireEvent("load_packets", self, {
-//        { "count", (uint64_t)dec }
-//      });
+      fireEvent("load_packets", self, {
+        { "count", (uint64_t)dec }
+      });
     }
   }
 

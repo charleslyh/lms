@@ -42,13 +42,24 @@ private:
 
 class DispatchQueue : virtual public Object {
 public:
-  /*
-   @function dispatch
-   向DispatchQueue中添加一个待执行的任务
+  /*!
+   @function async
+   向DispatchQueue中添加一个异步执行任务
    
-   @param runnable 待执行的任务实例
+   @param runnable 任务实例
    */
-  virtual void enqueue(void *sender, Runnable *runnable) = 0;
+  virtual void async(void *sender, Runnable *runnable) = 0;
+  
+  /*!
+   @function sync
+   向DispatchQueue中添加一个同步执行任务
+   
+   @param runnable 任务实例
+   
+   @discussion
+   如果是在lms主线程中调用sync，则会主动
+   */
+  virtual void sync(Runnable *runnable) = 0;
   
   /*
    @function cancel
@@ -59,9 +70,7 @@ public:
                  只会取消对应sender发起的任务。
    */
   virtual void cancel(void *sender) = 0;
-  
-  virtual void scheduleOnce() = 0;
-  
+   
   virtual bool isMainThread() = 0;
 };
 
@@ -72,6 +81,9 @@ bool isMainThread();
 // TODO: 既然业务能拿到DispatchQueue实例，为什么还需要下面两个方法？swift中的API是怎样的？
 void async(DispatchQueue *queue, void *sender, Runnable *runnable);
 void async(DispatchQueue *queue, void *sender, std::function<void()> action);
+
+void sync(DispatchQueue *queue, Runnable *runnable);
+void sync(DispatchQueue *queue, std::function<void()> action);
 
 class Timer : virtual public Object {};
 

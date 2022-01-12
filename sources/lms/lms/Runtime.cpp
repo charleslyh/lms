@@ -32,12 +32,12 @@ bool isMainThread() {
 }
 
 void async(DispatchQueue *queue, void *sender, Runnable *runnable) {
-  queue->enqueue(sender, runnable);
+  queue->async(sender, runnable);
 }
 
 void async(DispatchQueue *queue, void *sender, std::function<void()> action) {
   auto r = new LambdaRunnable(action);
-  queue->enqueue(sender, r);
+  queue->async(sender, r);
   lms::release(r);
 }
 
