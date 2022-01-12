@@ -5,6 +5,8 @@ extern "C" {
 #include <libavformat/avformat.h>
 }
 
+namespace lms { class DispatchQueue; }
+
 class FFMediaFile : public lms::MediaSource {
 public:
   FFMediaFile(const char *path);
@@ -22,4 +24,6 @@ private:
   char *path;
   AVFormatContext *context;
   void *obsLP;
+  
+  lms::DispatchQueue *q;
 };

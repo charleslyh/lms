@@ -55,6 +55,8 @@ int FFMediaFile::open() {
   
   av_dump_format(context, 0, path, 0);
   
+  q = lms::createDispatchQueue("LMS_FFMediaFile", lms::QueueTypeWorker);
+  
   obsLP = lms::addEventObserver("load_packets", nullptr, [this] (const char *nm, void *sender, const lms::EventParams& p) {
     uint32_t count = lms::variantsGetInt(p, "count");
     loadPackets(count);
@@ -68,7 +70,8 @@ void FFMediaFile::close() {
   
   lms::removeEventObserver(obsLP);
 
-  lms::mainQueue()->cancel(this);
+  lms::release(q);
+  q = nullptr;
 
   avformat_close_input(&context);
 }
@@ -77,7 +80,7 @@ void FFMediaFile::loadPackets(int count) {
   LMSLogVerbose("loadPackets: count=%d", count);
     
   // TODO: 使用独立的queue来加载数据
-  async(lms::mainQueue(), this, [this, count] {
+  async(q, [this, count] {
     AVPacket pkt;
     
     for (int i = 0; i< count; i += 1) {

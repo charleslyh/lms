@@ -21,7 +21,7 @@ void Cell::removeReceiver(Cell *receiver) {
 }
 
 void Cell::deliverPipelineMessage(const PipelineMessage& cmsg) {
-  assert(isMainThread());
+  assert(isHostThread());
   
   for (auto r : receivers) {
     r->didReceivePipelineMessage(cmsg);

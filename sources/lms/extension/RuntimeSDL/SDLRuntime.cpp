@@ -12,20 +12,14 @@ static SDL_threadID _sdlMainThreadId;
 
 class SDLMainQueue : public lms::DispatchQueue {
 public:
-  SDLMainQueue() {
-    mtx = SDL_CreateMutex();
+  SDLMainQueue(const std::string& nm) {
+    name = nm;
+    mtx  = SDL_CreateMutex();
   }
   
   ~SDLMainQueue() {
-    if (!items.empty()) {
-      LMSLogError("Should contains no runnable!");
-      
-      for (auto i : items) {
-        LMSLogWarning("Exceptional runnable: sender=%p, runnable=%p", i.first, i.second);
-      }
-    }
-    
-    SDL_DestroyMutex(mtx);
+    assert(lms::isHostThread());
+    cancel();
   }
   
   bool isHostThread() override {
@@ -33,15 +27,15 @@ public:
     return tid == _sdlMainThreadId;
   }
   
-  void async(void *sender, lms::Runnable *runnable) override {
-    LMSLogDebug("Enqueue runnable: s=%p, r=%p", sender, runnable);
+  void async(lms::Runnable *runnable) override {
+    LMSLogDebug("Enqueue runnable: q=%s, t=async, r=%p", name.c_str(), runnable);
     
     runnable->enqueueTS = SDL_GetTicks();
     
     lms::retain(runnable);
 
     SDL_LockMutex(mtx);
-    items.push_back(std::make_pair(sender, runnable));
+    runnables.push_back(runnable);
     SDL_UnlockMutex(mtx);
     
     SDL_Event event;
@@ -53,6 +47,8 @@ public:
   }
   
   void sync(lms::Runnable *runnable) override {
+    LMSLogDebug("Enqueue runnable: q=%s, t=sync , r=%p", name.c_str(), runnable);
+
     runnable->enqueueTS = SDL_GetTicks();
 
     class Synchronizer : public lms::Runnable {
@@ -82,18 +78,23 @@ public:
     
     if (isHostThread()) {
       // items的消费过程可能会产生新的runnable，所以不能直接在items队列中进行消费
+  
+      std::list<lms::Runnable *> cpy;
+      SDL_LockMutex(mtx);
+      {
+        cpy = runnables;
+        runnables = {};
+      }
+      SDL_UnlockMutex(mtx);
       
-      auto cpy = items;
-      items = {};
-      
-      for (auto i : items) {
-        launch(i.second, true);
+      for (auto r : cpy) {
+        launch(r, true);
       }
 
       launch(runnable, false);
     } else {
       auto sync = new Synchronizer(runnable);
-      async(this, sync);
+      async(sync);
       sync->wait();
       lms::release(sync);
     }
@@ -109,7 +110,7 @@ public:
     }
 
     uint32_t cost = SDL_GetTicks() - now;
-    LMSLogDebug("Launch runnalbe: r=%p, d=%-3d, c=%d", r, delay, cost);
+    LMSLogDebug("Launch runnalbe: q=%s, r=%p, d=%-3d, c=%d", name.c_str(), r, delay, cost);
   }
   
   void scheduleOnce() {
@@ -118,12 +119,9 @@ public:
 
     SDL_LockMutex(mtx);
     {
-      if (!items.empty()) {
-        auto item = items.front();
-        items.pop_front();
-
-        s = item.first;
-        r = item.second;
+      if (!runnables.empty()) {
+        r = runnables.front();
+        runnables.pop_front();
       }
     }
     SDL_UnlockMutex(mtx);
@@ -136,28 +134,24 @@ public:
     launch(r, true);
   }
   
-  void cancel(void *sender) override {
-    LMSLogDebug("Cancel runnables: s=%p", sender);
+  void cancel() override {
+    LMSLogDebug("Cancel runnables: q=%-20s, count=%d", name.c_str(), (int)runnables.size());
     
     SDL_LockMutex(mtx);
     {
-      items.remove_if([this, sender] (const std::pair<void *, lms::Runnable *>& item) {
-        if (sender == nullptr || item.first == sender) {
-          lms::release(item.second);
-          
-          LMSLogDebug("Cancel runnable: s=%p, r=%p", item.first, item.second);
-          return true;
-        } else {
-          return false;
-        }
-      });
+      for (auto r : runnables) {
+        lms::release(r);
+      }
+      
+      runnables = {};
     }
     SDL_UnlockMutex(mtx);
   }
   
 private:
+  std::string name;
   SDL_mutex *mtx;
-  std::list<std::pair<void *, lms::Runnable *>> items;
+  std::list<lms::Runnable *> runnables;
 };
 
 SDLApplication::SDLApplication(int argc, char **argv) {
@@ -280,8 +274,8 @@ void invalidateTimer(Timer *t) {
   SDL_WaitThread(timer->thread, nullptr);  
 }
 
-DispatchQueue *createDispatchQueue(const char *name) {
-  return new SDLMainQueue();
+DispatchQueue *createDispatchQueue(const char *name, QueueType type) {
+  return new SDLMainQueue(name);
 }
 
 }

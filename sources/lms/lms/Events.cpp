@@ -14,6 +14,11 @@ extern "C" {
 
 namespace lms {
 
+class EventCenter;
+class DispatchQueue;
+
+static EventCenter   *_eventCenter;
+
 struct EventObserver {
   const char   *name;
   void         *sender;
@@ -34,7 +39,7 @@ struct EventObserver {
 class EventCenter {
 public:
   void addObserver(EventObserver *o) {
-    assert(mainQueue());
+    assert(hostQueue());
     observers.push_back(o);
   }
   
@@ -44,7 +49,7 @@ public:
   
   void dispatchEvent(const char *name, void *sender, const EventParams& params) {
     std::string nm = name;
-    async(mainQueue(), this, [this, nm, sender, params] () {
+    lms::async(hostQueue(), [this, nm, sender, params] () {
       fire(nm.c_str(), sender, params);
     });
   }
@@ -60,8 +65,6 @@ private:
     }
   }
 };
-
-static EventCenter *_eventCenter;
 
 class LambdaEventHandler : public EventHandler {
 public:
@@ -131,9 +134,8 @@ static void setupEventCenter() {
 
 static void teardownEventCenter() {
   assert(_eventCenter->observers.empty());
-  
-  mainQueue()->cancel(&_eventCenter);
-  
+  assert(isHostThread());
+    
   delete _eventCenter;
   _eventCenter = nullptr;
 }

@@ -49,11 +49,15 @@ protected:
   
 private:
   static void onShouldLoadNextFrame(FFMDecoder *self, const char *evtName, void *sender, const EventParams& p) {
+    assert(isHostThread());
+    
     AVStream *streamObject = (AVStream *)variantsGetPointer(p, "stream_object");
     
     // 仅当发起方为对应流时，才应该激活解码处理，否则可能会提前解码数据帧
     if (streamObject == self->stream) {
-      self->decodeFrame();
+      async(self->q, [self] {
+        self->decodeFrame();
+      });
     }
   }
   
@@ -108,7 +112,7 @@ private:
   }
   
   void decodeFrame() {
-    assert(isMainThread());
+    assert(isHostThread());
 
     AVFrame frame = {0};
 
@@ -168,9 +172,12 @@ private:
   int64_t               cachingDuration;
   std::list<AVPacket *> packets;
   void                 *obsSLNF;  // event observer: "should_load_next_frame"
+  
+  DispatchQueue        *q;
 };
 
 void FFMDecoder::start() {
+  assert(isHostThread());
   LMSLogInfo("Start decoder | stream:%d, type:%d", stream->index, stream->codecpar->codec_type);
   
   int rt = avcodec_open2(codecContext, codec, 0);
@@ -179,6 +186,12 @@ void FFMDecoder::start() {
     return;
   }
   
+  const char *qname = "LMS_FFMDecoder(U)";
+  if (stream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) qname = "LMS_FFMDecoder(V)";
+  if (stream->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) qname = "LMS_FFMDecoder(A)";
+  
+  q = createDispatchQueue(qname, QueueTypeWorker);
+  
   obsSLNF = addEventObserver("should_load_next_frame", nullptr, this, (EventCallback)onShouldLoadNextFrame);
   
   decrements = 0;
@@ -186,9 +199,11 @@ void FFMDecoder::start() {
 }
 
 void FFMDecoder::stop() {
+  assert(isHostThread());
   LMSLogInfo("Start decoder | stream:%d, type:%d", stream->index, stream->codecpar->codec_type);
 
-  mainQueue()->cancel(this);
+  lms::release(q);
+  q = nullptr;
 
   // 需要在destroySemaphore前进行移除
   removeEventObserver(obsSLNF);
@@ -197,7 +212,7 @@ void FFMDecoder::stop() {
 }
 
 void FFMDecoder::didReceivePipelineMessage(const PipelineMessage& msg) {
-  assert(isMainThread());
+  assert(isHostThread());
   
   auto srcpkt = (AVPacket *)msg.at("packet_object").value.ptr;
   AVPacket *avpkt = av_packet_clone(srcpkt);
@@ -206,6 +221,8 @@ void FFMDecoder::didReceivePipelineMessage(const PipelineMessage& msg) {
 }
 
 Cell *createDecoder(const StreamMeta& meta) {
+  assert(isHostThread());
+
   // 根据meta信息匹配一个可创建，且最合适的解码器
 
   // 为了测试，返回一个假的解码器

@@ -155,7 +155,6 @@ void SDLView::start() {
 void SDLView::stop() {
   LMSLogDebug("SDLView=%p", this);
 
-  lms::mainQueue()->cancel(this);
   lms::release(scaler);
   
   SDL_DestroyTexture(texture);
@@ -177,6 +176,8 @@ void SDLView::setContentMode(SDLView::ContentMode contentMode) {
 }
 
 void SDLView::didReceivePipelineMessage(const lms::PipelineMessage &msg) {
+  assert(lms::isHostThread());
+  
   AVFrame *inputFrame = (AVFrame *)msg.at("frame").value.ptr;
   auto frame = av_frame_clone(inputFrame);
   
@@ -184,34 +185,32 @@ void SDLView::didReceivePipelineMessage(const lms::PipelineMessage &msg) {
   LMSLogVerbose("Render video frame | ts:%.2lf, pts:%lld", ts, frame->pts);
   
   // 渲染、UI相关的处理只能在主线程调度
-  lms::async(lms::mainQueue(), this, [this, frame] () {
-    Uint32 t0 = SDL_GetTicks();
+  Uint32 t0 = SDL_GetTicks();
 
-    AVFrame *yuv = scaler ? scaler->scale(frame) : frame;
+  AVFrame *yuv = scaler ? scaler->scale(frame) : frame;
 
-    SDL_UpdateYUVTexture(texture,
-                         NULL,
-                         yuv->data[0], yuv->linesize[0],
-                         yuv->data[1], yuv->linesize[1],
-                         yuv->data[2], yuv->linesize[2]);
-          
-    Uint32 t1 = SDL_GetTicks();
+  SDL_UpdateYUVTexture(texture,
+                       NULL,
+                       yuv->data[0], yuv->linesize[0],
+                       yuv->data[1], yuv->linesize[1],
+                       yuv->data[2], yuv->linesize[2]);
+        
+  Uint32 t1 = SDL_GetTicks();
 
-    int winWidth, winHeight;
-    SDL_GL_GetDrawableSize(win, &winWidth, &winHeight);
-    SDL_Rect bounds = {0, 0, winWidth, winHeight};
+  int winWidth, winHeight;
+  SDL_GL_GetDrawableSize(win, &winWidth, &winHeight);
+  SDL_Rect bounds = {0, 0, winWidth, winHeight};
 
-    SDL_Rect drawRect = calcDrawRect(contentMode, frame->width, frame->height, bounds);
+  SDL_Rect drawRect = calcDrawRect(contentMode, frame->width, frame->height, bounds);
 
-    SDL_RenderClear(renderer);
-    SDL_RenderCopy(renderer, texture, NULL, &drawRect);
-    SDL_RenderPresent(renderer);
-    
-    Uint32 t2 = SDL_GetTicks();
+  SDL_RenderClear(renderer);
+  SDL_RenderCopy(renderer, texture, NULL, &drawRect);
+  SDL_RenderPresent(renderer);
+  
+  Uint32 t2 = SDL_GetTicks();
 
-    av_frame_unref(frame);
+  av_frame_unref(frame);
 
-    LMSLogDebug("Render cost: total=%2u, texture=%2u, present=%2u", t2 - t0, t1 - t0, t2 - t1);
-  });
+  LMSLogDebug("Render cost: total=%2u, texture=%2u, present=%2u", t2 - t0, t1 - t0, t2 - t1);
 }
 

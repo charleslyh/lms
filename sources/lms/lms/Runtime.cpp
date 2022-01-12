@@ -10,23 +10,23 @@
 
 namespace lms {
 
-static DispatchQueue *_mainQueue;
+static DispatchQueue *_hostQueue;
 
-DispatchQueue *mainQueue() {
-  return _mainQueue;
+DispatchQueue *hostQueue() {
+  return _hostQueue;
 }
 
-bool isMainThread() {
-  return _mainQueue->isHostThread();
+bool isHostThread() {
+  return _hostQueue->isHostThread();
 }
 
-void async(DispatchQueue *queue, void *sender, Runnable *runnable) {
-  queue->async(sender, runnable);
+void async(DispatchQueue *queue, Runnable *runnable) {
+  queue->async(runnable);
 }
 
-void async(DispatchQueue *queue, void *sender, std::function<void()> action) {
+void async(DispatchQueue *queue, std::function<void()> action) {
   auto r = new LambdaRunnable(action);
-  queue->async(sender, r);
+  queue->async(r);
   lms::release(r);
 }
 
@@ -41,12 +41,13 @@ void sync(DispatchQueue *queue, std::function<void()> action) {
 }
 
 static void setupModuleRuntime() {
-  _mainQueue = createDispatchQueue("LMS Main");
+  // 创建LMS的主队列，该队列负责管理LMS的核心状态
+  _hostQueue = createDispatchQueue("LMS_Host", QueueTypeHost);
 }
 
 static void teardownModuleRuntime() {
-  release(_mainQueue);
-  _mainQueue = nullptr;
+  release(_hostQueue);
+  _hostQueue = nullptr;
 }
 
 Module moduleRuntime = {

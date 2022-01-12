@@ -25,6 +25,8 @@ public:
    */
   virtual void run() = 0;
   
+  virtual void completion() {}
+  
   uint32_t enqueueTS;
 };
 
@@ -48,7 +50,7 @@ public:
    
    @param runnable 任务实例
    */
-  virtual void async(void *sender, Runnable *runnable) = 0;
+  virtual void async(Runnable *runnable) = 0;
   
   /*!
    @function sync
@@ -69,10 +71,15 @@ public:
                  如果sender为nullptr，则会取消该DispatchQueue中所有待执行的任务。否则，
                  只会取消对应sender发起的任务。
    */
-  virtual void cancel(void *sender) = 0;
+  virtual void cancel() = 0;
    
   virtual bool isHostThread() = 0;
 };
+
+typedef enum {
+  QueueTypeHost   = 0,
+  QueueTypeWorker = 1,
+} QueueType;
 
 /*
  @function createDispatchQueue
@@ -83,15 +90,15 @@ public:
  @discuss
  需要在外部扩展模块中实现该方法，并链如主程序
 */
-DispatchQueue *createDispatchQueue(const char *name);
+DispatchQueue *createDispatchQueue(const char *name, QueueType type);
 
-DispatchQueue *mainQueue();
+DispatchQueue *hostQueue();
 
-bool isMainThread();
+bool isHostThread();
 
 // TODO: 既然业务能拿到DispatchQueue实例，为什么还需要下面两个方法？swift中的API是怎样的？
-void async(DispatchQueue *queue, void *sender, Runnable *runnable);
-void async(DispatchQueue *queue, void *sender, std::function<void()> action);
+void async(DispatchQueue *queue, Runnable *runnable);
+void async(DispatchQueue *queue, std::function<void()> action);
 
 void sync(DispatchQueue *queue, Runnable *runnable);
 void sync(DispatchQueue *queue, std::function<void()> action);

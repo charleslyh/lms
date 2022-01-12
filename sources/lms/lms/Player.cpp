@@ -305,6 +305,9 @@ public:
   }
  
   void start() override {
+    assert(isHostThread());
+    
+    q = createDispatchQueue("LMS_VRDriver", QueueTypeHost);
     nextFrame = nullptr;
 
     render->start();
@@ -312,7 +315,9 @@ public:
     double fps = av_q2d(stream->avg_frame_rate);
     double spf = 1.0 / fps; // second per frame, also timer interval
     
-    fpsTimer = scheduleTimer("VideoRenderDriver", spf, [this, spf] {
+    fpsTimer = scheduleTimer("LMS_VRDriver", spf, [this, spf] {
+      assert(!isHostThread());
+
       double playingTime = timeSync->getPlayingTime();
       if (playingTime < 0) {
         return;
@@ -380,17 +385,21 @@ public:
       assert(frame != nullptr);
       
       if (render) {
-        PipelineMessage msg;
-        msg["type"]  = "media_frame";
-        msg["frame"] = frame;
-        render->didReceivePipelineMessage(msg);
-        av_frame_unref(frame);
+        std::shared_ptr<AVFrame> guard(frame, [] (AVFrame *frm) { av_frame_unref(frm); });
+        async(q, [this, frame, guard] {
+          PipelineMessage msg;
+          msg["type"]  = "media_frame";
+          msg["frame"] = frame;
+          render->didReceivePipelineMessage(msg);
+        });
       }
 
     });
   }
   
   void stop() override {
+    assert(isHostThread());
+
     invalidateTimer(fpsTimer);
     lms::release(fpsTimer);
     
@@ -398,6 +407,9 @@ public:
     
     // TODO: 释放缓存帧
     nextFrame = nullptr;
+    
+    lms:release(q);
+    q= nullptr;
   }
   
   double cachedPlayingTime() override {
@@ -427,6 +439,8 @@ private:
   
   SDL_mutex *frameMutex;
   AVFrame   *nextFrame;
+  
+  DispatchQueue *q;
 };
 
 class Stream : public Cell {
@@ -495,7 +509,7 @@ public:
 
 public:
   void start() {
-    LMSLogInfo("Start coordinator");
+    LMSLogInfo("Start SourceDriver");
 
     obsDUP = addEventObserver("did_update_packets", nullptr, this, (EventCallback)onEventDidUpdatePackets);
     
@@ -505,7 +519,7 @@ public:
   }
   
   void stop() {
-    LMSLogInfo("Stop coordinator");
+    LMSLogInfo("Stop SourceDriver");
     
     removeEventObserver(obsDUP);
     obsDUP = nullptr;
@@ -549,13 +563,13 @@ Player::~Player() {
 }
 
 void Player::play() {
-  sync(mainQueue(), [this] {
+  sync(hostQueue(), [this] {
     doPlay();
   });
 }
 
 void Player::stop() {
-  sync(mainQueue(), [this] {
+  sync(hostQueue(), [this] {
     doStop();
   });
 }
