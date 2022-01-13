@@ -79,31 +79,30 @@ void FFMediaFile::close() {
 void FFMediaFile::loadPackets(int count) {
   LMSLogVerbose("loadPackets: count=%d", count);
     
-  // TODO: 使用独立的queue来加载数据
-  async(q, [this, count] {
-    AVPacket pkt;
-    
-    for (int i = 0; i< count; i += 1) {
-      int rt = av_read_frame(context, &pkt);
+  async(q, "LoadPackets", [this, count] {
+    for (int i = 0; i < count; i += 1) {
+      AVPacket *pkt = av_packet_alloc();
+      std::shared_ptr<AVPacket> guard(pkt, [] (AVPacket *p) {av_packet_unref(p); });
+      int rt = av_read_frame(context, pkt);
       
       if (rt >= 0) {
         LMSLogVerbose("Loaded: st=%d, flags=0x%-2x, dts=%" PRIu64
                       ", pts=%" PRIu64 ", dur=%" PRIu64 ", sz=%-6d",
-                      pkt.stream_index,
-                      pkt.flags,
-                      pkt.dts,
-                      pkt.pts,
-                      pkt.duration,
-                      pkt.size);
+                      pkt->stream_index,
+                      pkt->flags,
+                      pkt->dts,
+                      pkt->pts,
+                      pkt->duration,
+                      pkt->size);
         
-        lms::PipelineMessage msg;
-        msg["type"]          = "media_packet";
-        msg["stream_object"] = context->streams[pkt.stream_index];
-        msg["packet_object"] = &pkt;
-        this->deliverPacketMessage(msg);
+        async(lms::hostQueue(), "DeliverPacket", [this, pkt, guard] {
+          lms::PipelineMessage msg;
+          msg["type"]          = "media_packet";
+          msg["stream_object"] = context->streams[pkt->stream_index];
+          msg["packet_object"] = pkt;
+          deliverPacketMessage(msg);
+        });
       }
-
-      av_packet_unref(&pkt);
     }
   });
 }

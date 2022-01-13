@@ -19,20 +19,31 @@ namespace lms {
  */
 class Runnable : virtual public Object {
 public:
+  Runnable(const char *nm) {
+    this->nm = strdup(nm);
+  }
+  
+  ~Runnable() {
+    free((void *)nm);
+  }
+  
+  inline const char *name() {
+    return nm;
+  }
+  
   /*
    @function run
    任务的执行接口
    */
   virtual void run() = 0;
   
-  virtual void completion() {}
-  
   uint32_t enqueueTS;
+  const char *nm;
 };
 
 class LambdaRunnable : public Runnable {
 public:
-  LambdaRunnable(std::function<void()> a) : act(a) { }
+  LambdaRunnable(const char *nm, std::function<void()> a) : Runnable(nm), act(a) { }
   
   void run() override {
     act();
@@ -98,10 +109,10 @@ bool isHostThread();
 
 // TODO: 既然业务能拿到DispatchQueue实例，为什么还需要下面两个方法？swift中的API是怎样的？
 void async(DispatchQueue *queue, Runnable *runnable);
-void async(DispatchQueue *queue, std::function<void()> action);
+void async(DispatchQueue *queue, const char *name, std::function<void()> action);
 
 void sync(DispatchQueue *queue, Runnable *runnable);
-void sync(DispatchQueue *queue, std::function<void()> action);
+void sync(DispatchQueue *queue, const char *name, std::function<void()> action);
 
 class Timer : virtual public Object {};
 

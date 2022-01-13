@@ -49,7 +49,8 @@ public:
   
   void dispatchEvent(const char *name, void *sender, const EventParams& params) {
     std::string nm = name;
-    lms::async(hostQueue(), [this, nm, sender, params] () {
+    std::string rname = "DispatchEvent:" + nm;
+    lms::async(hostQueue(), rname.c_str(), [this, nm, sender, params] () {
       fire(nm.c_str(), sender, params);
     });
   }

@@ -362,6 +362,7 @@ public:
           av_frame_unref(frame);
 
           lms::fireEvent("should_load_next_frame", this, loadingParams);
+          lms::fireEvent("should_load_next_frame", this, loadingParams);
           continue;
         } else
         if (deviation > tollerance) {
@@ -386,7 +387,7 @@ public:
       
       if (render) {
         std::shared_ptr<AVFrame> guard(frame, [] (AVFrame *frm) { av_frame_unref(frm); });
-        async(q, [this, frame, guard] {
+        async(q, "DeliverFrame", [this, frame, guard] {
           PipelineMessage msg;
           msg["type"]  = "media_frame";
           msg["frame"] = frame;
@@ -563,13 +564,13 @@ Player::~Player() {
 }
 
 void Player::play() {
-  sync(hostQueue(), [this] {
+  sync(hostQueue(), "StartPlay", [this] {
     doPlay();
   });
 }
 
 void Player::stop() {
-  sync(hostQueue(), [this] {
+  sync(hostQueue(), "StopPlay", [this] {
     doStop();
   });
 }

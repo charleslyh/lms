@@ -24,8 +24,8 @@ void async(DispatchQueue *queue, Runnable *runnable) {
   queue->async(runnable);
 }
 
-void async(DispatchQueue *queue, std::function<void()> action) {
-  auto r = new LambdaRunnable(action);
+void async(DispatchQueue *queue, const char *name, std::function<void()> action) {
+  auto r = new LambdaRunnable(name, action);
   queue->async(r);
   lms::release(r);
 }
@@ -34,8 +34,8 @@ void sync(DispatchQueue *queue, Runnable *r) {
   queue->sync(r);
 }
 
-void sync(DispatchQueue *queue, std::function<void()> action) {
-  auto r = new LambdaRunnable(action);
+void sync(DispatchQueue *queue, const char *name, std::function<void()> action) {
+  auto r = new LambdaRunnable(name, action);
   queue->sync(r);
   lms::release(r);
 }

@@ -26,6 +26,7 @@ public:
   FFMDecoder(AVStream *stream) {
     this->stream = stream;
     this->params = stream->codecpar;
+    this->mtx    = SDL_CreateMutex();
     
     codec = avcodec_find_decoder(params->codec_id);
     if (codec == nullptr) {
@@ -39,6 +40,10 @@ public:
       LMSLogError("Couldn't copy codec context: %d", rt);
       return;
     }
+  }
+  
+  ~FFMDecoder() {
+    SDL_DestroyMutex(mtx);
   }
   
 protected:
@@ -55,7 +60,7 @@ private:
     
     // 仅当发起方为对应流时，才应该激活解码处理，否则可能会提前解码数据帧
     if (streamObject == self->stream) {
-      async(self->q, [self] {
+      async(self->q, "DecodeFrame", [self] {
         self->decodeFrame();
       });
     }
@@ -79,7 +84,11 @@ private:
   }
   
   void pushPacket(AVPacket *packet) {
-    packets.push_back(packet);
+    SDL_LockMutex(mtx);
+    {
+      packets.push_back(packet);
+    }
+    SDL_UnlockMutex(mtx);
        
     LMSLogVerbose("Push packet: type=%s, stream:%d, count=%u",
                   _media_type_name(stream->codecpar->codec_type), stream->index, (uint32_t)packets.size());
@@ -88,12 +97,17 @@ private:
   AVPacket *popPacket() {
     AVPacket *packet = nullptr;
 
-    if (!packets.empty()) {
-      packet = packets.front();
-      packets.pop_front();
+    SDL_LockMutex(mtx);
+    {
+      if (!packets.empty()) {
+        packet = packets.front();
+        packets.pop_front();
+      }
+      
+      decrements += 1;
     }
+    SDL_UnlockMutex(mtx);
     
-    decrements += 1;
     if (decrements >=10) {
       notifyPacketsUpdated(2);
     }
@@ -105,7 +119,11 @@ private:
   }
   
   void refillPacket(AVPacket *packet) {
-    packets.push_front(packet);
+    SDL_LockMutex(mtx);
+    {
+      packets.push_front(packet);
+    }
+    SDL_UnlockMutex(mtx);
 
     LMSLogVerbose("Refill packet: type=%s, stream:%d, count=%u",
                   _media_type_name(stream->codecpar->codec_type), stream->index, (uint32_t)packets.size());
@@ -174,6 +192,7 @@ private:
   void                 *obsSLNF;  // event observer: "should_load_next_frame"
   
   DispatchQueue        *q;
+  SDL_mutex            *mtx;
 };
 
 void FFMDecoder::start() {
@@ -190,7 +209,7 @@ void FFMDecoder::start() {
   if (stream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) qname = "LMS_FFMDecoder(V)";
   if (stream->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) qname = "LMS_FFMDecoder(A)";
   
-  q = createDispatchQueue(qname, QueueTypeWorker);
+  q = createDispatchQueue(qname, QueueTypeHost);
   
   obsSLNF = addEventObserver("should_load_next_frame", nullptr, this, (EventCallback)onShouldLoadNextFrame);
   

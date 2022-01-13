@@ -9,15 +9,140 @@ extern "C" {
 static Uint32 RunnableEvent;
 static SDL_threadID _sdlMainThreadId;
 
-
-class SDLMainQueue : public lms::DispatchQueue {
+class Synchronizer : public lms::Runnable {
 public:
-  SDLMainQueue(const std::string& nm) {
+  Synchronizer(lms::Runnable *r) : Runnable(r->name()) {
+    this->r   = lms::retain(r);
+    this->sem = SDL_CreateSemaphore(0);
+  }
+  
+  ~Synchronizer() {
+    lms::release(r);
+    SDL_DestroySemaphore(sem);
+  }
+  
+  void wait() {
+    SDL_SemWait(sem);
+  }
+
+  void run() override {
+    r->run();
+    SDL_SemPost(sem);
+  }
+  
+  SDL_semaphore *sem;
+  lms::Runnable *r;
+};
+
+class SDLWorkerQueue : public lms::DispatchQueue {
+public:
+  SDLWorkerQueue(const std::string& nm) {
+    name = nm;
+    mtx  = SDL_CreateMutex();
+    sem  = SDL_CreateSemaphore(0);
+    isRunning = true;
+    thread = SDL_CreateThread((SDL_ThreadFunction)runloop, nm.c_str(), this);
+  }
+  
+  ~SDLWorkerQueue() {
+    isRunning = false;
+    SDL_SemPost(sem);
+    SDL_WaitThread(thread, nullptr);
+
+    SDL_DestroySemaphore(sem);
+    SDL_DestroyMutex(mtx);
+  }
+  
+  bool isHostThread() override {
+    return false;
+  }
+  
+  void async(lms::Runnable *r) override {
+    LMSLogDebug("Enqueue runnable: q=%-20s, t=worker/async, r=%s(%p)", name.c_str(), r->name(), r);
+    r->enqueueTS = SDL_GetTicks();
+    
+    SDL_LockMutex(mtx);
+    {
+      lms::retain(r);
+      runnables.push_back(r);
+    }
+    SDL_UnlockMutex(mtx);
+    
+    SDL_SemPost(sem);
+  }
+  
+  void sync(lms::Runnable *r) override {
+    LMSLogDebug("Enqueue runnable: q=%-20s, t=worker/sync , r=%s(%p)", name.c_str(), r->name(), r);
+    r->enqueueTS = SDL_GetTicks();
+    
+    auto s = new Synchronizer(r);
+    async(s);
+    s->wait();
+    lms::release(s);
+  }
+  
+  void cancel() override {
+    SDL_LockMutex(mtx);
+    {
+      for (auto r : runnables) {
+        LMSLogDebug("Cancel runnable: q=%-20s, t=worker, r=%s(%p)", name.c_str(), r->name(), r);
+        lms::release(r);
+      }
+      
+      runnables = {};
+    }
+    SDL_UnlockMutex(mtx);
+  }
+  
+private:
+  static int runloop(SDLWorkerQueue *q) {
+    while(q->isRunning) {
+      SDL_SemWait(q->sem);
+      if (!q->isRunning) {
+        break;
+      }
+      
+      lms::Runnable *r = nullptr;
+      SDL_LockMutex(q->mtx);
+      {
+        if (!q->runnables.empty()) {
+          r = q->runnables.front();
+          q->runnables.pop_front();
+        }
+      }
+      SDL_UnlockMutex(q->mtx);
+
+      uint32_t now = SDL_GetTicks();
+      uint32_t delay = now - r->enqueueTS;
+
+      r->run();
+
+      uint32_t cost = SDL_GetTicks() - now;
+      LMSLogDebug("Launch runnalbe: q=%-20s, r=%s(%p), d=%-3d, c=%d", q->name.c_str(), r->name(), r, delay, cost);
+
+      lms::release(r);
+    }
+    
+    return 0;
+  }
+  
+private:
+  std::string name;
+  bool isRunning;
+  SDL_Thread *thread;
+  SDL_mutex  *mtx;
+  SDL_sem    *sem;
+  std::list<lms::Runnable *> runnables;
+};
+
+class SDLHostQueue : public lms::DispatchQueue {
+public:
+  SDLHostQueue(const std::string& nm) {
     name = nm;
     mtx  = SDL_CreateMutex();
   }
   
-  ~SDLMainQueue() {
+  ~SDLHostQueue() {
     assert(lms::isHostThread());
     cancel();
   }
@@ -27,15 +152,15 @@ public:
     return tid == _sdlMainThreadId;
   }
   
-  void async(lms::Runnable *runnable) override {
-    LMSLogDebug("Enqueue runnable: q=%s, t=async, r=%p", name.c_str(), runnable);
+  void async(lms::Runnable *r) override {
+    LMSLogDebug("Enqueue runnable: q=%-20s, t=async, r=%s(%p)", name.c_str(), r->name(), r);
     
-    runnable->enqueueTS = SDL_GetTicks();
+    r->enqueueTS = SDL_GetTicks();
     
-    lms::retain(runnable);
+    lms::retain(r);
 
     SDL_LockMutex(mtx);
-    runnables.push_back(runnable);
+    runnables.push_back(r);
     SDL_UnlockMutex(mtx);
     
     SDL_Event event;
@@ -46,36 +171,11 @@ public:
     SDL_PushEvent(&event);
   }
   
-  void sync(lms::Runnable *runnable) override {
-    LMSLogDebug("Enqueue runnable: q=%s, t=sync , r=%p", name.c_str(), runnable);
+  void sync(lms::Runnable *r) override {
+    LMSLogDebug("Enqueue runnable: q=%-20s, t=sync , r=%s(%p)", name.c_str(), r->name(), r);
 
-    runnable->enqueueTS = SDL_GetTicks();
+    r->enqueueTS = SDL_GetTicks();
 
-    class Synchronizer : public lms::Runnable {
-    public:
-      Synchronizer(lms::Runnable *r) {
-        this->r   = lms::retain(r);
-        this->sem = SDL_CreateSemaphore(0);
-      }
-      
-      ~Synchronizer() {
-        lms::release(r);
-        SDL_DestroySemaphore(sem);
-      }
-      
-      void wait() {
-        SDL_SemWait(sem);
-      }
-
-      void run() override {
-        r->run();
-        SDL_SemPost(sem);
-      }
-      
-      SDL_semaphore *sem;
-      lms::Runnable *r;
-    };
-    
     if (isHostThread()) {
       // items的消费过程可能会产生新的runnable，所以不能直接在items队列中进行消费
   
@@ -87,13 +187,13 @@ public:
       }
       SDL_UnlockMutex(mtx);
       
-      for (auto r : cpy) {
-        launch(r, true);
+      for (auto ahead : cpy) {
+        launch(ahead, true);
       }
 
-      launch(runnable, false);
+      launch(r, false);
     } else {
-      auto sync = new Synchronizer(runnable);
+      auto sync = new Synchronizer(r);
       async(sync);
       sync->wait();
       lms::release(sync);
@@ -105,12 +205,13 @@ public:
     uint32_t delay = now - r->enqueueTS;
 
     r->run();
+
+    uint32_t cost = SDL_GetTicks() - now;
+    LMSLogDebug("Launch runnalbe: q=%-20s, r=%s(%p), d=%-3d, c=%d", name.c_str(), r->name(), r, delay, cost);
+
     if (autoRelease) {
       lms::release(r);
     }
-
-    uint32_t cost = SDL_GetTicks() - now;
-    LMSLogDebug("Launch runnalbe: q=%s, r=%p, d=%-3d, c=%d", name.c_str(), r, delay, cost);
   }
   
   void scheduleOnce() {
@@ -140,6 +241,7 @@ public:
     SDL_LockMutex(mtx);
     {
       for (auto r : runnables) {
+        LMSLogDebug("Cancel runnable : q=%-20s, t=host , r=%s(%p)", name.c_str(), r->name(), r);
         lms::release(r);
       }
       
@@ -179,7 +281,7 @@ void SDLApplication::run(SDLAppDelegate *delegate) {
     }
 
     if (event.type == RunnableEvent) {
-      auto queue = (SDLMainQueue *)event.user.data1;
+      auto queue = (SDLHostQueue *)event.user.data1;
       queue->scheduleOnce();
     }
   }
@@ -252,7 +354,7 @@ Timer *scheduleTimer(const char *name, double interval, std::function<void()> ac
     name = "Undefined";
   }
     
-  auto r = new LambdaRunnable(action);
+  auto r = new LambdaRunnable(name, action);
   auto timer = new SDLTimer(name, interval, r);
   release(r);
   
@@ -275,7 +377,11 @@ void invalidateTimer(Timer *t) {
 }
 
 DispatchQueue *createDispatchQueue(const char *name, QueueType type) {
-  return new SDLMainQueue(name);
+  if (type == QueueTypeHost) {
+    return new SDLHostQueue(name);
+  } else {
+    return new SDLWorkerQueue(name);
+  }
 }
 
 }
