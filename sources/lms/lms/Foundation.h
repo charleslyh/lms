@@ -9,6 +9,8 @@
 #  define LMS_LEAKS_TRACING 0
 #endif
 
+#define FWD_DECLARE_STRUCT(sname) struct sname; typedef sname sname;
+
 namespace lms {
 
 class Object {

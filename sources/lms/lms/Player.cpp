@@ -78,11 +78,11 @@ void Player::doPlay() {
     auto stream = (AVStream *)meta.at("stream_object").value.ptr;
 
     if (mtype == MediaTypeVideo) {
-      VideoRenderDriver *driver = new VideoRenderDriver(stream, vrender, timesync);
-      
+      Cell *driver = new VideoRenderDriver(stream, vrender, timesync);
       Cell *decoder = createDecoder(meta);
       vstream = new Stream(meta, decoder, nullptr, driver);
 
+      // Video Render 是外部传入的，所以需要认为配置一下，以便其获取stream相关的元信息
       vrender->configure(meta);
 
       lms::release(driver);
