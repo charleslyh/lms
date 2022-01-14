@@ -14,4 +14,8 @@ target_sources(RuntimeSDL
     SDLRuntime.cpp
     SDLView.h
     SDLView.cpp
+    SDLSpeaker.h
+    SDLSpeaker.cpp
+    SDLAudioResampler.h
+    SDLAudioResampler.cpp
 )

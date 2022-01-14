@@ -39,6 +39,15 @@ list(APPEND source_files
   Decoder.cpp
   
   Events.cpp
+  
+  SourceDriver.h
+  SourceDriver.cpp
+  
+  TimeSync.h
+  TimeSync.cpp
+  
+  VideoRenderDriver.h
+  VideoRenderDriver.cpp
  
   LMS.cpp
   Foundation.cpp
