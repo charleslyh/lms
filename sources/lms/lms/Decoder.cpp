@@ -53,7 +53,7 @@ protected:
   void didReceivePipelineMessage(const PipelineMessage& msg) override;
   
 private:
-  static void onShouldLoadNextFrame(FFMDecoder *self, const char *evtName, void *sender, const EventParams& p) {
+  static void onEventDecodeFrame(FFMDecoder *self, const char *evtName, void *sender, const EventParams& p) {
     assert(isHostThread());
     
     AVStream *streamObject = (AVStream *)variantsGetPointer(p, "stream_object");
@@ -191,7 +191,7 @@ private:
   int                   decrements;
   int64_t               cachingDuration;
   std::list<AVPacket *> packets;
-  void                 *obsSLNF;  // event observer: "should_load_next_frame"
+  void                 *eoDecodeFrame;  // event observer: "decode_frame"
   
   DispatchQueue        *q;
   SDL_mutex            *mtx;
@@ -213,7 +213,7 @@ void FFMDecoder::start() {
   
   q = createDispatchQueue(qname, QueueTypeWorker);
   
-  obsSLNF = addEventObserver("should_load_next_frame", nullptr, this, (EventCallback)onShouldLoadNextFrame);
+  eoDecodeFrame = addEventObserver("decode_frame", nullptr, this, (EventCallback)onEventDecodeFrame);
   
   decrements = 0;
   notifyPacketsUpdated(0);
@@ -227,7 +227,7 @@ void FFMDecoder::stop() {
   q = nullptr;
 
   // 需要在destroySemaphore前进行移除
-  removeEventObserver(obsSLNF);
+  removeEventObserver(eoDecodeFrame);
 
   avcodec_close(codecContext);
 }

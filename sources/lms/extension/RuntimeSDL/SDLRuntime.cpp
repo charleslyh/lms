@@ -58,7 +58,7 @@ public:
   }
   
   void async(lms::Runnable *r) override {
-    LMSLogDebug("Enqueue runnable: q=%-20s, t=worker/async, r=%s(%p)", name.c_str(), r->name(), r);
+    LMSLogDebug("Enqueue runnable: q=%s, t=worker/async, r=%s(%p)", name.c_str(), r->name(), r);
     r->enqueueTS = SDL_GetTicks();
     
     SDL_LockMutex(mtx);
@@ -72,7 +72,7 @@ public:
   }
   
   void sync(lms::Runnable *r) override {
-    LMSLogDebug("Enqueue runnable: q=%-20s, t=worker/sync , r=%s(%p)", name.c_str(), r->name(), r);
+    LMSLogDebug("Enqueue runnable: q=%s, t=worker/sync , r=%s(%p)", name.c_str(), r->name(), r);
     r->enqueueTS = SDL_GetTicks();
     
     auto s = new Synchronizer(r);
@@ -85,7 +85,7 @@ public:
     SDL_LockMutex(mtx);
     {
       for (auto r : runnables) {
-        LMSLogDebug("Cancel runnable: q=%-20s, t=worker, r=%s(%p)", name.c_str(), r->name(), r);
+        LMSLogDebug("Cancel runnable: q=%s, t=worker, r=%s(%p)", name.c_str(), r->name(), r);
         lms::release(r);
       }
       
@@ -118,7 +118,7 @@ private:
       r->run();
 
       uint32_t cost = SDL_GetTicks() - now;
-      LMSLogDebug("Launch runnalbe: q=%-20s, r=%s(%p), d=%-3d, c=%d", q->name.c_str(), r->name(), r, delay, cost);
+      LMSLogDebug("Launch runnalbe: q=%s, r=%s(%p), d=%-3d, c=%d", q->name.c_str(), r->name(), r, delay, cost);
 
       lms::release(r);
     }
@@ -153,7 +153,7 @@ public:
   }
   
   void async(lms::Runnable *r) override {
-    LMSLogDebug("Enqueue runnable: q=%-20s, t=async, r=%s(%p)", name.c_str(), r->name(), r);
+    LMSLogDebug("Enqueue runnable: q=%s, t=async, r=%s(%p)", name.c_str(), r->name(), r);
     
     r->enqueueTS = SDL_GetTicks();
     
@@ -172,7 +172,7 @@ public:
   }
   
   void sync(lms::Runnable *r) override {
-    LMSLogDebug("Enqueue runnable: q=%-20s, t=sync , r=%s(%p)", name.c_str(), r->name(), r);
+    LMSLogDebug("Enqueue runnable: q=%s, t=sync , r=%s(%p)", name.c_str(), r->name(), r);
 
     r->enqueueTS = SDL_GetTicks();
 
@@ -207,7 +207,7 @@ public:
     r->run();
 
     uint32_t cost = SDL_GetTicks() - now;
-    LMSLogDebug("Launch runnalbe: q=%-20s, r=%s(%p), d=%-3d, c=%d", name.c_str(), r->name(), r, delay, cost);
+    LMSLogDebug("Launch runnalbe: q=%s, r=%s(%p), d=%-3d, c=%d", name.c_str(), r->name(), r, delay, cost);
 
     if (autoRelease) {
       lms::release(r);
@@ -236,12 +236,12 @@ public:
   }
   
   void cancel() override {
-    LMSLogDebug("Cancel runnables: q=%-20s, count=%d", name.c_str(), (int)runnables.size());
+    LMSLogDebug("Cancel runnables: q=%s, count=%d", name.c_str(), (int)runnables.size());
     
     SDL_LockMutex(mtx);
     {
       for (auto r : runnables) {
-        LMSLogDebug("Cancel runnable : q=%-20s, t=host , r=%s(%p)", name.c_str(), r->name(), r);
+        LMSLogDebug("Cancel runnable : q=%s, t=host , r=%s(%p)", name.c_str(), r->name(), r);
         lms::release(r);
       }
       

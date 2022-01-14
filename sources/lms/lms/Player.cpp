@@ -224,7 +224,7 @@ private:
     
     while(len > 0) {
       if (self->frameItems->count() < SDLSpeaker::IdealCachingFrames) {
-        fireEvent("should_load_next_frame", self, {
+        fireEvent("decode_frame", self, {
           {"stream_object", self->stream}
         });
       }
@@ -341,7 +341,7 @@ public:
         SDL_UnlockMutex(frameMutex);
         
         if (frame == nullptr) {
-          lms::fireEvent("should_load_next_frame", this, loadingParams);
+          lms::fireEvent("decode_frame", this, loadingParams);
           LMSLogWarning("No video frame!");
           return;
         }
@@ -352,7 +352,7 @@ public:
         // deviation < 0 表示当前视频帧的应播时间小于当前播放时间（迟滞帧），超过一定时间（tollerance）则认为是过期帧
         double deviation = frameTime - playingTime;
 
-        LMSLogVerbose("Video frame popped | pts:%lld, frameTime:%.2lf, playingTime:%.2lf, deviation:%.3lf(%.2lf frames)",
+        LMSLogVerbose("Video frame popped | pts:%lld, ftime:%.2lf, ptime:%.2lf, dev:%.3lf(%.2lf frames)",
                       frame->pts, frameTime, playingTime, deviation, deviation / spf);
 
         double tollerance = spf / 2.0;
@@ -361,7 +361,7 @@ public:
           LMSLogWarning("Video frame dropped");
           av_frame_unref(frame);
 
-          lms::fireEvent("should_load_next_frame", this, loadingParams);
+          lms::fireEvent("decode_frame", this, loadingParams);
           continue;
         } else
         if (deviation > tollerance) {
@@ -377,7 +377,7 @@ public:
           frame = nullptr;
           return;
         } else {
-          lms::fireEvent("should_load_next_frame", this, loadingParams);
+          lms::fireEvent("decode_frame", this, loadingParams);
           break;
         }
       }
