@@ -362,7 +362,6 @@ public:
           av_frame_unref(frame);
 
           lms::fireEvent("should_load_next_frame", this, loadingParams);
-          lms::fireEvent("should_load_next_frame", this, loadingParams);
           continue;
         } else
         if (deviation > tollerance) {

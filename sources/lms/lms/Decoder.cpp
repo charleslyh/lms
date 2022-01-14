@@ -130,13 +130,14 @@ private:
   }
   
   void decodeFrame() {
-    assert(isHostThread());
+    assert(!isHostThread());
 
-    AVFrame frame = {0};
+    AVFrame *frame = av_frame_alloc();
+    std::shared_ptr<AVFrame> guard(frame, [] (AVFrame *f) { av_frame_unref(f); });
 
     int rt = 0;
     do {
-      rt = avcodec_receive_frame(codecContext, &frame);
+      rt = avcodec_receive_frame(codecContext, frame);
       
       if (rt == 0) {
         break;
@@ -168,13 +169,14 @@ private:
     if (rt == 0) {
       uint32_t now = SDL_GetTicks();
       LMSLogDebug("Frame decoded: type=%s, stream:%d, pts=%" PRIi64,
-                  _media_type_name(stream->codecpar->codec_type), stream->index, frame.pts);
+                  _media_type_name(stream->codecpar->codec_type), stream->index, frame->pts);
       
-      PipelineMessage frameMsg;
-      frameMsg["type"]  = "media_frame";
-      frameMsg["frame"] = &frame;
-      deliverPipelineMessage(frameMsg);
-      av_frame_unref(&frame);
+      async(lms::hostQueue(), "DeliverFrame", [this, frame, guard] {
+        PipelineMessage frameMsg;
+        frameMsg["type"]  = "media_frame";
+        frameMsg["frame"] = frame;
+        deliverPipelineMessage(frameMsg);
+      });
     }
     
     return rt == 0 || rt == AVERROR(EAGAIN);
@@ -209,7 +211,7 @@ void FFMDecoder::start() {
   if (stream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) qname = "LMS_FFMDecoder(V)";
   if (stream->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) qname = "LMS_FFMDecoder(A)";
   
-  q = createDispatchQueue(qname, QueueTypeHost);
+  q = createDispatchQueue(qname, QueueTypeWorker);
   
   obsSLNF = addEventObserver("should_load_next_frame", nullptr, this, (EventCallback)onShouldLoadNextFrame);
   
